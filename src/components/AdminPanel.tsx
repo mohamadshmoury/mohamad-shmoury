@@ -34,7 +34,7 @@ interface AdminPanelProps {
 type AdminTab = 'courses' | 'exams' | 'questions' | 'submissions' | 'profile';
 
 const ADMIN_SESSION_KEY = 'shmoury_admin_authenticated';
-const adminCode = import.meta.env.VITE_ADMIN_ACCESS_CODE || '123456';
+const adminCode = import.meta.env.VITE_ADMIN_ACCESS_CODE || 'Mohamad123456_Quran';
 
 function normalizeCourseStatus(status: CourseStatus): CourseStatus {
   return status === 'active' ? 'in_progress' : status;
