@@ -1,6 +1,6 @@
 import { CheckCircle2, Download, Search, XCircle, Save, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { updateSubmissionReview } from '../../lib/examService';
+import { updateSubmissionReview, deleteSubmission } from '../../lib/examService';
 import type { Exam, Submission } from '../../types';
 
 interface SubmissionsManagerProps {
@@ -112,6 +112,28 @@ export default function SubmissionsManager({
     }
   }
 
+  async function handleDeleteSubmission(submissionId: string) {
+    if (!window.confirm('هل أنت متأكد من حذف هذه الإجابة؟')) {
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      await deleteSubmission(submissionId);
+      setSubmissions((prev) => prev.filter((s) => s.id !== submissionId));
+      if (selectedSubmission?.id === submissionId) {
+        setSelectedSubmission(null);
+      }
+      setNotice('تم حذف الإجابة بنجاح.');
+    } catch (err) {
+      setError(err instanceof Error ? `تعذر حذف الإجابة: ${err.message}` : 'تعذر حذف الإجابة.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
   return (
     <div className="admin-grid submissions-grid">
       <section className="tool-panel">
@@ -155,9 +177,14 @@ export default function SubmissionsManager({
                     </span>
                   </td>
                   <td>
-                    <button className="ghost-action small" onClick={() => setSelectedSubmission(row)} type="button">
-                      عرض
-                    </button>
+                    <div className="item-actions">
+                      <button className="ghost-action small" onClick={() => setSelectedSubmission(row)} type="button">
+                        عرض
+                      </button>
+                      <button className="danger-action small" onClick={() => handleDeleteSubmission(row.id!)} type="button" disabled={loading}>
+                        حذف
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

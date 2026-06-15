@@ -8,7 +8,7 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import { FormEvent, useRef, useState } from 'react';
-import { createDawra, updateDawra, uploadPublicAsset, updateExamPublishState, updateExamSettings } from '../../lib/examService';
+import { createDawra, updateDawra, uploadPublicAsset, updateExamPublishState, updateExamSettings, deleteDawra } from '../../lib/examService';
 import type { Dawra, Exam, CourseStatus, CourseAttachment } from '../../types';
 
 interface CourseManagerProps {
@@ -240,6 +240,31 @@ export default function CourseManager({
     }
   }
 
+  async function handleDeleteCourse(dawraId: string) {
+    if (!window.confirm('هل أنت متأكد من حذف هذه الدورة؟ سيتم حذف جميع الاختبارات والأسئلة المرتبطة بها.')) {
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      await deleteDawra(dawraId);
+      setDawrat((prev) => prev.filter((d) => d.id !== dawraId));
+      if (selectedDawraId === dawraId) {
+        selectDawra('');
+      }
+      if (courseForm.id === dawraId) {
+        cancelEditCourse();
+      }
+      setNotice('تم حذف الدورة بنجاح.');
+    } catch (err) {
+      setError(err instanceof Error ? `تعذر حذف الدورة: ${err.message}` : 'تعذر حذف الدورة.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
   return (
     <div className="admin-grid courses-management-grid">
       <div className="stacked-panels">
@@ -431,6 +456,9 @@ export default function CourseManager({
                     </span>
                     <button className="secondary-action small" onClick={() => startEditCourse(dawra)} type="button">
                       تعديل الدورة
+                    </button>
+                    <button className="danger-action small" onClick={() => handleDeleteCourse(dawra.id)} type="button" disabled={loading}>
+                      حذف الدورة
                     </button>
                     <button
                       className="ghost-action small"

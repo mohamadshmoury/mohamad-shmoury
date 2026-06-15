@@ -477,3 +477,21 @@ export async function updateSubmissionReview(id: string, adminNotes: string, rev
   if (error) throw error;
   return data as Submission;
 }
+
+export async function deleteDawra(dawraId: string) {
+  const client = requireSupabase();
+  const { error } = await client.from(DAWRAT_TABLE).delete().eq('id', dawraId);
+  if (error) throw error;
+}
+
+export async function deleteExam(examId: string) {
+  const client = requireSupabase();
+  const { error } = await client.from(EXAMS_TABLE).delete().eq('id', examId);
+  if (error) throw error;
+}
+
+export async function deleteSubmission(submissionId: string) {
+  const client = requireSupabase();
+  const { error } = await client.from(SUBMISSIONS_TABLE).delete().eq('id', submissionId);
+  if (error) throw error;
+}

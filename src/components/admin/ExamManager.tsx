@@ -1,6 +1,6 @@
 import { FileQuestion, Loader2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { createExamForDawra, updateExamSettings, updateExamPublishState } from '../../lib/examService';
+import { createExamForDawra, updateExamSettings, updateExamPublishState, deleteExam } from '../../lib/examService';
 import type { Dawra, Exam, CourseStatus } from '../../types';
 
 interface ExamManagerProps {
@@ -186,6 +186,28 @@ export default function ExamManager({
     }
   }
 
+  async function handleDeleteExam(examId: string) {
+    if (!window.confirm('هل أنت متأكد من حذف هذا الاختبار؟ سيتم حذف جميع الأسئلة والإجابات المرتبطة به.')) {
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      await deleteExam(examId);
+      setExams((prev) => prev.filter((e) => e.id !== examId));
+      if (examForm.id === examId) {
+        cancelEdit();
+      }
+      setNotice('تم حذف الاختبار بنجاح.');
+    } catch (err) {
+      setError(err instanceof Error ? `تعذر حذف الاختبار: ${err.message}` : 'تعذر حذف الاختبار.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
   return (
     <div className="admin-grid exam-management-grid">
       <section className="tool-panel">
@@ -316,6 +338,14 @@ export default function ExamManager({
                   type="button"
                 >
                   تعديل
+                </button>
+                <button
+                  className="danger-action small"
+                  onClick={() => handleDeleteExam(exam.id)}
+                  type="button"
+                  disabled={loading}
+                >
+                  حذف
                 </button>
                 <button
                   className="secondary-action small"

@@ -57,20 +57,18 @@ function ExamPicker({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="exam-picker">
-      <label>
-        <span>اختر الاختبار أولًا لإدارة أسئلته:</span>
-        <select value={selectedExamId} onChange={(e) => onSelect(e.target.value)}>
-          <option value="">-- يرجى الاختيار --</option>
-          {exams.map((exam) => (
-            <option key={exam.id} value={exam.id}>
-              {exam.dawra?.title ? `[${exam.dawra.title}] ` : ''}
-              {exam.title}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
+    <label className="field full picker">
+      <span>اختر الاختبار أولًا لإدارة أسئلته:</span>
+      <select value={selectedExamId} onChange={(e) => onSelect(e.target.value)}>
+        <option value="">-- يرجى الاختيار --</option>
+        {exams.map((exam) => (
+          <option key={exam.id} value={exam.id}>
+            {exam.dawra?.title ? `[${exam.dawra.title}] ` : ''}
+            {exam.title}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
