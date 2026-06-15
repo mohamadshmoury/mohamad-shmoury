@@ -408,7 +408,6 @@ export default function PublicSite({ onStartExam }: PublicSiteProps) {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
           >
-            واجهة هادئة تجمع الدورات الجارية والمكتملة، مع موادها واختباراتها في مكان واحد.
           </motion.p>
           <motion.div 
             className="hero-actions"
@@ -491,7 +490,6 @@ export default function PublicSite({ onStartExam }: PublicSiteProps) {
             </span>
             <h2 id="courses-heading" className="section-label">الدورات العلمية</h2>
           </div>
-          <p className="section-intro">الدورات الجارية تفتح اختباراتها للطلاب، والمكتملة تحفظ موادها، والقادمة تبقى ظاهرة للتعريف بها.</p>
         </div>
 
         {loading && (
