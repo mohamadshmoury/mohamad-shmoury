@@ -572,9 +572,9 @@ code {
   margin: 0 0 14px;
   color: #fff;
   max-width: 680px;
-  font-size: clamp(2.55rem, 6vw, 5.2rem);
+  font-size: clamp(2rem, 5vw, 3.8rem);
   font-weight: 900;
-  line-height: 1.08;
+  line-height: 1.15;
   text-shadow: 0 3px 22px rgb(0 0 0 / 0.34);
   text-wrap: balance;
 }
@@ -1052,14 +1052,15 @@ code {
 
 .access-code-input-row {
   display: flex;
-  gap: 8px;
-  align-items: stretch;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
 }
 
 .access-code-input {
-  flex: 1;
+  width: 100%;
   min-width: 0;
-  height: 42px;
+  height: 44px;
   padding: 0 14px;
   border: 1.5px solid var(--line);
   border-radius: var(--radius);
@@ -1101,6 +1102,11 @@ code {
   justify-content: center;
   border-radius: var(--radius);
   font-size: 0.95rem;
+}
+
+/* When inside the access-code row, button is always full-width */
+.access-code-input-row .start-exam-btn {
+  width: 100%;
 }
 
 /* ─── Loader / Empty States ──────────────────────────────────────────── */
@@ -2506,6 +2512,7 @@ body {
 
 .hero h1 {
   max-width: 760px;
+  line-height: 1.25;
 }
 
 .hero-tagline {
@@ -3128,8 +3135,9 @@ body {
 
   .progress-strip { top: 60px; }
 
-  .access-code-input-row { flex-direction: column; }
-  .access-code-input-row button { width: 100%; }
+  /* access-code-input-row is already column-direction globally; ensure full width on mobile */
+  .access-code-input-row .access-code-input,
+  .access-code-input-row .start-exam-btn { width: 100%; }
 
   .attachments-grid,
   .item-actions {
