@@ -39,8 +39,8 @@ function isDemoExam(exam: Exam) {
   return exam.id.startsWith('demo-');
 }
 
-function shuffle<T>(items: T[]) {
-  return [...items].sort(() => Math.random() - 0.5);
+function orderQuestions(questions: Question[]) {
+  return [...questions].sort((a, b) => a.sort_order - b.sort_order);
 }
 
 function answerLabel(question: Question, answer: string) {
@@ -81,13 +81,13 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
       try {
         if (examSummary.questions?.length) {
           if (!mounted) return;
-          setExam({ ...examSummary, questions: shuffle(examSummary.questions) });
+          setExam({ ...examSummary, questions: orderQuestions(examSummary.questions) });
           return;
         }
 
         const freshExam = await getExamWithQuestions(examSummary.id);
         if (!mounted) return;
-        setExam({ ...freshExam, questions: shuffle(freshExam.questions || []) });
+        setExam({ ...freshExam, questions: orderQuestions(freshExam.questions || []) });
       } catch (error) {
         if (!mounted) return;
         setLoadError(

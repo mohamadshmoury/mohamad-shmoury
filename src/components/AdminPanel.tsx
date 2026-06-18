@@ -100,6 +100,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         setQuestions([]);
         return;
       }
+      setQuestions([]);
       setLoading(true);
       try {
         const qRes = await getQuestions(selectedExamId);

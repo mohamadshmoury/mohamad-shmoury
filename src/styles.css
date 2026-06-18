@@ -2086,6 +2086,17 @@ code {
 }
 .admin-list-item:hover { border-color: rgb(13 122 111 / 0.25); }
 
+.question-admin-main {
+  min-width: 0;
+}
+
+.question-admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .course-group {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -2468,6 +2479,26 @@ tbody tr:hover td { background: var(--line-soft); }
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.direct-exam-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  min-height: calc(100vh - 74px);
+  padding: 32px var(--page-gutter);
+  color: var(--muted);
+  text-align: center;
+}
+
+.direct-exam-state strong {
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.direct-exam-state p {
+  margin: 0;
 }
 
 .avatar-preview-container {
@@ -3126,6 +3157,10 @@ body {
   .table-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .question-admin-actions {
+    justify-content: flex-end;
   }
 
   .tabs {

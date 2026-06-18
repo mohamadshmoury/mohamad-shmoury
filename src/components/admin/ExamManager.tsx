@@ -1,6 +1,7 @@
-import { FileQuestion, Loader2 } from 'lucide-react';
+import { Copy, FileQuestion, Loader2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createExamForDawra, updateExamSettings, updateExamPublishState, deleteExam } from '../../lib/examService';
+import { copyText, createExamSlug, getExamShareUrl } from '../../lib/examLinks';
 import type { Dawra, Exam, CourseStatus } from '../../types';
 
 interface ExamManagerProps {
@@ -71,6 +72,15 @@ export default function ExamManager({
 
     if (!examForm.examTitle.trim()) {
       setError('عنوان الاختبار مطلوب.');
+      return;
+    }
+
+    const requestedSlug = createExamSlug(examForm.examTitle);
+    const conflictingExam = exams.find(
+      (exam) => exam.id !== examForm.id && createExamSlug(exam.title) === requestedSlug,
+    );
+    if (conflictingExam) {
+      setError(`يوجد اختبار آخر باسم "${conflictingExam.title}". استخدم عنوانًا مختلفًا ليبقى الرابط فريدًا.`);
       return;
     }
 
@@ -207,6 +217,25 @@ export default function ExamManager({
     }
   }
 
+  async function copyExamLink(exam: Exam) {
+    setError('');
+    setNotice('');
+    const conflictingExam = exams.find(
+      (candidate) =>
+        candidate.id !== exam.id &&
+        createExamSlug(candidate.title) === createExamSlug(exam.title),
+    );
+    if (conflictingExam) {
+      setError('لا يمكن إنشاء رابط بالاسم لأن اختبارًا آخر يحمل الاسم نفسه.');
+      return;
+    }
+    try {
+      await copyText(getExamShareUrl(exam));
+      setNotice(`تم نسخ الرابط المباشر لاختبار "${exam.title}".`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذر نسخ رابط الاختبار.');
+    }
+  }
 
   return (
     <div className="admin-grid exam-management-grid">
@@ -334,6 +363,16 @@ export default function ExamManager({
               <div className="item-actions">
                 <button
                   className="secondary-action small"
+                  onClick={() => copyExamLink(exam)}
+                  type="button"
+                  disabled={!exam.is_published}
+                  title={exam.is_published ? 'نسخ الرابط المباشر للاختبار' : 'انشر الاختبار أولًا لنسخ رابطه'}
+                >
+                  <Copy size={15} aria-hidden />
+                  نسخ الرابط
+                </button>
+                <button
+                  className="secondary-action small"
                   onClick={() => startEditExam(exam)}
                   type="button"
                 >
@@ -366,7 +405,7 @@ export default function ExamManager({
                   type="button"
                   title={exam.show_results_immediately ? 'حجب النتائج' : 'عرض النتائج'}
                 >
-                  {exam.show_results_immediately ? 'حجب' : 'عرض'}
+                  {exam.show_results_immediately ? 'حجب النتائج' : 'عرض النتائج'}
                 </button>
               </div>
             </article>

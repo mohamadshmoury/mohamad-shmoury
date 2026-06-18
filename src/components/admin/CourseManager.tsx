@@ -501,7 +501,7 @@ export default function CourseManager({
                           type="button"
                           title={exam.show_results_immediately ? 'حجب النتائج' : 'عرض النتائج'}
                         >
-                          {exam.show_results_immediately ? 'حجب' : 'عرض'}
+                          {exam.show_results_immediately ? 'حجب النتائج' : 'عرض النتائج'}
                         </button>
                       </div>
                     </div>

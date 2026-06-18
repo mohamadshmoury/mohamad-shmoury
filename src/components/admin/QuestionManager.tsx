@@ -1,8 +1,8 @@
-import { Loader2, Plus, Save, Trash2, FileQuestion } from 'lucide-react';
-import { FormEvent, useState } from 'react';
-import { createQuestion, deleteQuestion } from '../../lib/examService';
+import { Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
+import { createQuestion, deleteQuestion, updateQuestion } from '../../lib/examService';
 import { getCorrectAnswerLabel } from '../../lib/scoring';
-import type { Exam, Question, QuestionType } from '../../types';
+import type { CorrectAnswer, Exam, Question, QuestionType } from '../../types';
 
 interface QuestionManagerProps {
   exams: Exam[];
@@ -46,6 +46,26 @@ function createEmptyQuestionForm(type: QuestionType = 'multiple_choice'): Questi
   };
 }
 
+function createQuestionForm(question: Question): QuestionFormState {
+  const options = question.options.length >= 2 ? question.options : ['', ''];
+  const correctOptionIndex = Math.max(
+    0,
+    options.findIndex((option) => option === question.correct_answer.value),
+  );
+
+  return {
+    prompt: question.prompt,
+    type: question.type,
+    options,
+    correctOptionIndex,
+    trueFalseAnswer: question.correct_answer.value === 'false' ? 'false' : 'true',
+    shortAnswers: question.correct_answer.values?.length
+      ? question.correct_answer.values
+      : [''],
+    points: question.points,
+  };
+}
+
 // Inline ExamPicker to keep it simple
 function ExamPicker({
   exams,
@@ -86,11 +106,21 @@ export default function QuestionManager({
   const [questionForm, setQuestionForm] = useState<QuestionFormState>(() =>
     createEmptyQuestionForm(),
   );
+  const [editingQuestionId, setEditingQuestionId] = useState('');
 
   const selectedExam = exams.find((exam) => exam.id === selectedExamId) || null;
 
+  useEffect(() => {
+    setEditingQuestionId('');
+    setQuestionForm(createEmptyQuestionForm());
+  }, [selectedExamId]);
+
   function changeQuestionType(type: QuestionType) {
-    setQuestionForm((prev) => ({ ...createEmptyQuestionForm(type), prompt: prev.prompt }));
+    setQuestionForm((prev) => ({
+      ...createEmptyQuestionForm(type),
+      prompt: prev.prompt,
+      points: prev.points,
+    }));
   }
 
   function addQuestionOption() {
@@ -135,7 +165,30 @@ export default function QuestionManager({
     });
   }
 
-  async function handleCreateQuestion(event: FormEvent<HTMLFormElement>) {
+  function buildQuestionAnswers() {
+    let options: string[] = [];
+    let correctAnswer: CorrectAnswer;
+
+    if (questionForm.type === 'multiple_choice') {
+      const selectedAnswer = questionForm.options[questionForm.correctOptionIndex]?.trim();
+      options = questionForm.options.map((option) => option.trim()).filter(Boolean);
+      if (options.length < 2) throw new Error('يرجى توفير خيارين على الأقل.');
+      if (!selectedAnswer || !options.includes(selectedAnswer)) {
+        throw new Error('يرجى تحديد إجابة صحيحة مكتوبة.');
+      }
+      correctAnswer = { value: selectedAnswer };
+    } else if (questionForm.type === 'true_false') {
+      correctAnswer = { value: questionForm.trueFalseAnswer };
+    } else {
+      const validAnswers = questionForm.shortAnswers.map((answer) => answer.trim()).filter(Boolean);
+      if (validAnswers.length === 0) throw new Error('يرجى توفير إجابة مقبولة واحدة على الأقل.');
+      correctAnswer = { values: validAnswers };
+    }
+
+    return { options, correctAnswer };
+  }
+
+  async function handleSaveQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice('');
     setError('');
@@ -148,48 +201,59 @@ export default function QuestionManager({
       setError('نص السؤال مطلوب.');
       return;
     }
+    if (!Number.isFinite(questionForm.points) || questionForm.points < 1) {
+      setError('يجب أن تكون نقاط السؤال 1 أو أكثر.');
+      return;
+    }
 
     setLoading(true);
     try {
-      const qData: Partial<Question> = {
-        exam_id: selectedExamId,
+      const { options, correctAnswer } = buildQuestionAnswers();
+      const input = {
         prompt: questionForm.prompt.trim(),
         type: questionForm.type,
+        options,
+        correctAnswer,
         points: questionForm.points,
       };
 
-      if (questionForm.type === 'multiple_choice') {
-        const validOptions = questionForm.options.map((o) => o.trim()).filter(Boolean);
-        if (validOptions.length < 2) throw new Error('يرجى توفير خيارين على الأقل.');
-        qData.options = validOptions;
-        qData.correct_answer = {
-          value: validOptions[Math.min(questionForm.correctOptionIndex, validOptions.length - 1)],
-        };
-      } else if (questionForm.type === 'true_false') {
-        qData.correct_answer = { value: questionForm.trueFalseAnswer };
-      } else if (questionForm.type === 'short_answer') {
-        const validAnswers = questionForm.shortAnswers.map((a) => a.trim()).filter(Boolean);
-        if (validAnswers.length === 0) throw new Error('يرجى توفير إجابة مقبولة واحدة على الأقل.');
-        qData.correct_answer = { values: validAnswers };
+      if (editingQuestionId) {
+        const updated = await updateQuestion(editingQuestionId, input);
+        setQuestions((prev) =>
+          prev.map((question) => (question.id === updated.id ? updated : question)),
+        );
+        setEditingQuestionId('');
+        setNotice('تم تحديث السؤال وإجابته.');
+      } else {
+        const created = await createQuestion({
+          examId: selectedExamId,
+          ...input,
+          sortOrder: Math.max(0, ...questions.map((question) => question.sort_order)) + 1,
+        });
+        setQuestions((prev) => [...prev, created]);
+        setNotice('تم إضافة السؤال.');
       }
 
-      const created = await createQuestion({
-        examId: selectedExamId,
-        prompt: questionForm.prompt.trim(),
-        type: questionForm.type,
-        options: qData.options || [],
-        correctAnswer: qData.correct_answer!,
-        points: questionForm.points,
-        sortOrder: questions.length + 1,
-      });
-      setQuestions((prev) => [...prev, created]);
       setQuestionForm((prev) => ({ ...createEmptyQuestionForm(prev.type), prompt: '' }));
-      setNotice('تم إضافة السؤال.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذر إضافة السؤال.');
+      setError(err instanceof Error ? err.message : 'تعذر حفظ السؤال.');
     } finally {
       setLoading(false);
     }
+  }
+
+  function startEditQuestion(question: Question) {
+    setEditingQuestionId(question.id);
+    setQuestionForm(createQuestionForm(question));
+    setNotice('يمكنك الآن تعديل السؤال وإجابته.');
+    setError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function cancelEditQuestion() {
+    setEditingQuestionId('');
+    setQuestionForm(createEmptyQuestionForm(questionForm.type));
+    setNotice('');
   }
 
   async function handleDeleteQuestion(questionId: string) {
@@ -198,6 +262,9 @@ export default function QuestionManager({
     try {
       await deleteQuestion(questionId);
       setQuestions((prev) => prev.filter((q) => q.id !== questionId));
+      if (editingQuestionId === questionId) {
+        cancelEditQuestion();
+      }
       setNotice('تم حذف السؤال.');
     } catch (err) {
       setError('تعذر حذف السؤال.');
@@ -211,10 +278,14 @@ export default function QuestionManager({
       <section className="tool-panel">
         <ExamPicker exams={exams} selectedExamId={selectedExamId} onSelect={setSelectedExamId} />
         <div className="section-heading compact">
-          <span className="section-kicker">سؤال جديد</span>
-          <h3>{selectedExam?.title || 'اختر اختبارًا'}</h3>
+          <span className="section-kicker">{editingQuestionId ? 'تعديل السؤال والإجابة' : 'سؤال جديد'}</span>
+          <h3>
+            {editingQuestionId
+              ? 'عدّل البيانات ثم احفظ التغييرات'
+              : selectedExam?.title || 'اختر اختبارًا'}
+          </h3>
         </div>
-        <form className="question-builder" onSubmit={handleCreateQuestion} noValidate>
+        <form className="question-builder" onSubmit={handleSaveQuestion} noValidate>
           <div className="question-builder-toolbar">
             <label className="field">
               <span>نوع السؤال</span>
@@ -356,10 +427,18 @@ export default function QuestionManager({
             </div>
           )}
 
-          <button className="primary-action" disabled={loading || !selectedExamId} type="submit">
-            {loading ? <Loader2 className="spin" size={18} aria-hidden /> : <Save size={18} aria-hidden />}
-            حفظ السؤال
-          </button>
+          <div className="flow-actions full">
+            {editingQuestionId && (
+              <button className="secondary-action" onClick={cancelEditQuestion} type="button">
+                <X size={18} aria-hidden />
+                إلغاء التعديل
+              </button>
+            )}
+            <button className="primary-action" disabled={loading || !selectedExamId} type="submit">
+              {loading ? <Loader2 className="spin" size={18} aria-hidden /> : <Save size={18} aria-hidden />}
+              {editingQuestionId ? 'حفظ التعديلات' : 'حفظ السؤال'}
+            </button>
+          </div>
         </form>
       </section>
 
@@ -376,9 +455,19 @@ export default function QuestionManager({
                 <strong>{question.prompt}</strong>
                 <small>الإجابة: {getCorrectAnswerLabel(question)}</small>
               </div>
-              <button className="danger-icon" onClick={() => handleDeleteQuestion(question.id)} type="button" title="حذف السؤال">
-                <Trash2 size={18} aria-hidden />
-              </button>
+              <div className="question-admin-actions">
+                <button
+                  className="secondary-action small"
+                  onClick={() => startEditQuestion(question)}
+                  type="button"
+                >
+                  <Pencil size={16} aria-hidden />
+                  تعديل
+                </button>
+                <button className="danger-icon" onClick={() => handleDeleteQuestion(question.id)} type="button" title="حذف السؤال">
+                  <Trash2 size={18} aria-hidden />
+                </button>
+              </div>
             </article>
           ))}
           {questions.length === 0 && selectedExamId && (

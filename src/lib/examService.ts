@@ -1,4 +1,5 @@
 import type { CorrectAnswer, CourseStatus, Dawra, Exam, Question, QuestionType, Submission, SheikhProfile } from '../types';
+import { createExamSlug } from './examLinks';
 import { requireSupabase } from './supabase';
 
 const DAWRAT_TABLE = 'shmoury_dawrat';
@@ -146,6 +147,53 @@ export async function getExamWithQuestions(examId: string) {
 
   return {
     ...normalizeExam(examRow),
+    questions: (questionRows || []).map(normalizeQuestion),
+  };
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+export async function getPublishedExamWithQuestions(examReference: string) {
+  const client = requireSupabase();
+  let exam: Exam;
+
+  if (isUuid(examReference)) {
+    const { data: examRow, error: examError } = await client
+      .from(EXAMS_TABLE)
+      .select('*, dawra:shmoury_dawrat(*)')
+      .eq('id', examReference)
+      .eq('is_published', true)
+      .single();
+
+    if (examError) throw examError;
+    exam = normalizeExam(examRow);
+  } else {
+    const matches = (await getPublishedExams()).filter(
+      (candidate) => createExamSlug(candidate.title) === examReference,
+    );
+
+    if (matches.length === 0) {
+      throw new Error('الاختبار غير موجود أو غير منشور.');
+    }
+    if (matches.length > 1) {
+      throw new Error('يوجد أكثر من اختبار يحمل الاسم نفسه.');
+    }
+    exam = matches[0];
+  }
+
+  const { data: questionRows, error: questionsError } = await client
+    .from(QUESTIONS_TABLE)
+    .select('*')
+    .eq('exam_id', exam.id)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (questionsError) throw questionsError;
+
+  return {
+    ...exam,
     questions: (questionRows || []).map(normalizeQuestion),
   };
 }
@@ -369,7 +417,8 @@ export async function getQuestions(examId: string) {
     .from(QUESTIONS_TABLE)
     .select('*')
     .eq('exam_id', examId)
-    .order('sort_order', { ascending: true });
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
 
   if (error) throw error;
   return (data || []).map(normalizeQuestion);
@@ -396,6 +445,31 @@ export async function createQuestion(input: {
       points: input.points,
       sort_order: input.sortOrder,
     })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return normalizeQuestion(data);
+}
+
+export async function updateQuestion(questionId: string, input: {
+  prompt: string;
+  type: QuestionType;
+  options: string[];
+  correctAnswer: CorrectAnswer;
+  points: number;
+}) {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from(QUESTIONS_TABLE)
+    .update({
+      prompt: input.prompt,
+      type: input.type,
+      options: input.options,
+      correct_answer: input.correctAnswer,
+      points: input.points,
+    })
+    .eq('id', questionId)
     .select('*')
     .single();
 
