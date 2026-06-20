@@ -24,8 +24,27 @@ export const demoExams: Exam[] = [
       theme_color: '#0f766e',
       duration: '4 أسابيع',
       attachments: [
-        { name: 'كتاب آداب طالب العلم (PDF)', url: 'https://example.com/book.pdf' },
-        { name: 'متن الدورة العلمي', url: 'https://example.com/matn.pdf' }
+        {
+          id: 'demo-material-001',
+          name: 'كتاب آداب طالب العلم (PDF)',
+          url: 'https://example.com/book.pdf',
+          kind: 'file',
+          week: 'مواد عامة',
+        },
+        {
+          id: 'demo-material-002',
+          name: 'تسجيل المحاضرة الأولى',
+          url: 'https://example.com/lecture-1',
+          kind: 'link',
+          week: 'الأسبوع الأول',
+        },
+        {
+          id: 'demo-material-003',
+          name: 'ملخص المحاضرة الثانية',
+          url: 'https://example.com/week-2-notes.pdf',
+          kind: 'file',
+          week: 'الأسبوع الثاني',
+        },
       ]
     },
     questions: [

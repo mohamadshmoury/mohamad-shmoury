@@ -12,6 +12,7 @@ import {
   Files,
   Hourglass,
   ListChecks,
+  Link2,
   User,
   ArrowDown,
 } from 'lucide-react';
@@ -19,7 +20,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { demoExams } from '../lib/demoData';
 import { getPublishedExams, getAllDawrat, getSheikhProfile } from '../lib/examService';
-import type { CourseStatus, Exam, Dawra, SheikhProfile } from '../types';
+import type { CourseAttachment, CourseStatus, Exam, Dawra, SheikhProfile } from '../types';
 
 interface PublicSiteProps {
   onStartExam: (exam: Exam) => void;
@@ -152,6 +153,17 @@ function normalizeCourseStatus(status: CourseStatus): CourseStatus {
   return status === 'active' ? 'in_progress' : status;
 }
 
+function groupCourseMaterials(materials: CourseAttachment[]) {
+  const groups = new Map<string, CourseAttachment[]>();
+
+  materials.forEach((material) => {
+    const label = material.week?.trim() || 'مواد عامة';
+    groups.set(label, [...(groups.get(label) || []), material]);
+  });
+
+  return Array.from(groups, ([label, items]) => ({ label, items }));
+}
+
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
@@ -173,6 +185,7 @@ function CourseCard({
   const isCompleted = status === 'completed';
   const formattedStartDate = formatCourseDate(dawra.starts_on);
   const attachmentCount = dawra.attachments?.length || 0;
+  const materialGroups = groupCourseMaterials(dawra.attachments || []);
   const cardStateClass = isInProgress ? 'is-live' : isCompleted ? 'is-completed' : 'is-upcoming';
   const badgeClass = demoMode
     ? 'badge-demo'
@@ -230,19 +243,27 @@ function CourseCard({
 
         {dawra.attachments && dawra.attachments.length > 0 && (
           <div className="course-files-section">
-            <span className="files-section-title">مرفقات الدورة:</span>
-            <div className="attachments-grid">
-              {dawra.attachments.map((file, idx) => (
-                <a
-                  key={idx}
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="attachment-download-link"
-                >
-                  <FileText size={14} />
-                  <span>{file.name}</span>
-                </a>
+            <span className="files-section-title">مواد ومحاضرات الدورة</span>
+            <div className="course-material-groups">
+              {materialGroups.map((group) => (
+                <section className="course-material-group" key={group.label}>
+                  <h3>{group.label}</h3>
+                  <div className="attachments-grid">
+                    {group.items.map((material, idx) => (
+                      <a
+                        key={material.id || `${material.url}-${idx}`}
+                        href={material.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="attachment-download-link"
+                      >
+                        {material.kind === 'link' ? <Link2 size={15} /> : <FileText size={15} />}
+                        <span>{material.name}</span>
+                        <small>{material.kind === 'link' ? 'فتح الرابط' : 'عرض الملف'}</small>
+                      </a>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           </div>

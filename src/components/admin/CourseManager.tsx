@@ -2,6 +2,10 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Link2,
   Loader2,
   Plus,
   Trash2,
@@ -9,7 +13,13 @@ import {
 } from 'lucide-react';
 import { FormEvent, useRef, useState } from 'react';
 import { createDawra, updateDawra, uploadPublicAsset, updateExamPublishState, updateExamSettings, deleteDawra } from '../../lib/examService';
-import type { Dawra, Exam, CourseStatus, CourseAttachment } from '../../types';
+import type {
+  Dawra,
+  Exam,
+  CourseStatus,
+  CourseAttachment,
+  CourseMaterialKind,
+} from '../../types';
 
 interface CourseManagerProps {
   dawrat: Dawra[];
@@ -43,6 +53,20 @@ function fileNameWithoutExtension(fileName: string) {
   return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
 }
 
+function createMaterialId() {
+  return globalThis.crypto?.randomUUID?.()
+    || `material-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function isValidPublicUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export default function CourseManager({
   dawrat,
   exams,
@@ -70,13 +94,18 @@ export default function CourseManager({
   });
 
   const [courseAttachments, setCourseAttachments] = useState<CourseAttachment[]>([]);
+  const [newAttachmentKind, setNewAttachmentKind] = useState<CourseMaterialKind>('file');
+  const [newAttachmentWeek, setNewAttachmentWeek] = useState('');
   const [newAttachmentName, setNewAttachmentName] = useState('');
+  const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
   const [newAttachmentFile, setNewAttachmentFile] = useState<File | null>(null);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const attachmentFileInputRef = useRef<HTMLInputElement | null>(null);
 
   function clearAttachmentDraft() {
+    setNewAttachmentWeek('');
     setNewAttachmentName('');
+    setNewAttachmentUrl('');
     setNewAttachmentFile(null);
     if (attachmentFileInputRef.current) {
       attachmentFileInputRef.current.value = '';
@@ -92,8 +121,19 @@ export default function CourseManager({
 
   async function addAttachment() {
     const name = newAttachmentName.trim();
-    if (!name || !newAttachmentFile) {
-      setError('اسم الملف والملف المرفوع مطلوبان.');
+    if (!name) {
+      setError('عنوان المادة مطلوب.');
+      return;
+    }
+
+    if (newAttachmentKind === 'file' && !newAttachmentFile) {
+      setError('اختر الملف الذي تريد إضافته.');
+      return;
+    }
+
+    const linkUrl = newAttachmentUrl.trim();
+    if (newAttachmentKind === 'link' && !isValidPublicUrl(linkUrl)) {
+      setError('أدخل رابطاً صحيحاً يبدأ بـ http:// أو https://.');
       return;
     }
 
@@ -101,10 +141,23 @@ export default function CourseManager({
     setError('');
     setNotice('');
     try {
-      const url = await uploadPublicAsset(newAttachmentFile, 'course-files');
-      setCourseAttachments((prev) => [...prev, { name, url }]);
+      const url = newAttachmentKind === 'file'
+        ? await uploadPublicAsset(newAttachmentFile!, 'course-files')
+        : linkUrl;
+      setCourseAttachments((prev) => [
+        ...prev,
+        {
+          id: createMaterialId(),
+          name,
+          url,
+          kind: newAttachmentKind,
+          week: newAttachmentWeek.trim(),
+        },
+      ]);
       clearAttachmentDraft();
-      setNotice('تم رفع الملف وإضافته إلى الدورة.');
+      setNotice(newAttachmentKind === 'file'
+        ? 'تم رفع الملف وإضافته إلى مواد الدورة.'
+        : 'تمت إضافة الرابط إلى مواد الدورة.');
     } catch (uploadError) {
       setError(
         uploadError instanceof Error
@@ -118,6 +171,16 @@ export default function CourseManager({
 
   function removeAttachment(index: number) {
     setCourseAttachments((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function moveAttachment(index: number, direction: -1 | 1) {
+    setCourseAttachments((prev) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
   }
 
   async function handleCreateCourse(event: FormEvent<HTMLFormElement>) {
@@ -326,58 +389,142 @@ export default function CourseManager({
               />
             </label>
             
-            {/* Attachments Section */}
+            {/* Course materials */}
             <div className="attachments-builder full">
-              <span className="builder-title">ملفات اختيارية للدورة</span>
-              <div className="attachment-add-row">
-                <input
-                  value={newAttachmentName}
-                  onChange={(e) => setNewAttachmentName(e.target.value)}
-                  placeholder="اسم الملف (مثال: كتاب الشرح pdf)"
-                />
-                <div className="file-picker">
-                  <input
-                    ref={attachmentFileInputRef}
-                    className="file-input-hidden"
-                    type="file"
-                    onChange={(event) => handleAttachmentFileChange(event.target.files?.[0] || null)}
-                  />
-                  <button
-                    type="button"
-                    className="secondary-action file-picker-button"
-                    onClick={() => attachmentFileInputRef.current?.click()}
-                  >
-                    <UploadCloud size={17} aria-hidden />
-                    {newAttachmentFile ? 'تغيير الملف' : 'رفع ملف'}
-                  </button>
-                  {newAttachmentFile && (
-                    <span className="selected-file-name">{newAttachmentFile.name}</span>
-                  )}
+              <div className="materials-builder-heading">
+                <div>
+                  <span className="builder-title">مواد الدورة الأسبوعية</span>
+                  <small>أضف أي عدد من الملفات والروابط، ورتّبها بحسب تسلسل المحاضرات.</small>
                 </div>
+                <span className="materials-count">{courseAttachments.length} مادة</span>
+              </div>
+
+              <div className="material-kind-options" role="group" aria-label="نوع المادة">
                 <button
                   type="button"
-                  className="secondary-action"
+                  className={newAttachmentKind === 'file' ? 'selected' : ''}
+                  onClick={() => setNewAttachmentKind('file')}
+                >
+                  <FileText size={16} aria-hidden />
+                  ملف
+                </button>
+                <button
+                  type="button"
+                  className={newAttachmentKind === 'link' ? 'selected' : ''}
+                  onClick={() => setNewAttachmentKind('link')}
+                >
+                  <Link2 size={16} aria-hidden />
+                  رابط
+                </button>
+              </div>
+
+              <div className="material-fields-grid">
+                <label className="material-field">
+                  <span>الأسبوع أو القسم</span>
+                  <input
+                    value={newAttachmentWeek}
+                    onChange={(event) => setNewAttachmentWeek(event.target.value)}
+                    placeholder="مثال: الأسبوع الأول"
+                  />
+                </label>
+                <label className="material-field">
+                  <span>عنوان المادة</span>
+                  <input
+                    value={newAttachmentName}
+                    onChange={(event) => setNewAttachmentName(event.target.value)}
+                    placeholder="مثال: تسجيل المحاضرة الأولى"
+                  />
+                </label>
+
+                {newAttachmentKind === 'link' ? (
+                  <label className="material-field material-source-field">
+                    <span>الرابط</span>
+                    <input
+                      value={newAttachmentUrl}
+                      onChange={(event) => setNewAttachmentUrl(event.target.value)}
+                      placeholder="https://..."
+                      inputMode="url"
+                      dir="ltr"
+                    />
+                  </label>
+                ) : (
+                  <div className="material-field material-source-field">
+                    <span>الملف</span>
+                    <div className="file-picker">
+                      <input
+                        ref={attachmentFileInputRef}
+                        className="file-input-hidden"
+                        type="file"
+                        onChange={(event) => handleAttachmentFileChange(event.target.files?.[0] || null)}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-action file-picker-button"
+                        onClick={() => attachmentFileInputRef.current?.click()}
+                      >
+                        <UploadCloud size={17} aria-hidden />
+                        {newAttachmentFile ? 'تغيير الملف' : 'اختيار ملف'}
+                      </button>
+                      {newAttachmentFile && (
+                        <span className="selected-file-name">{newAttachmentFile.name}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="primary-action material-add-button"
                   onClick={addAttachment}
                   disabled={uploadingAttachment}
                 >
                   {uploadingAttachment ? <Loader2 className="spin" size={17} aria-hidden /> : <Plus size={17} aria-hidden />}
-                  إضافة ملف
+                  إضافة المادة
                 </button>
               </div>
+
               {courseAttachments.length > 0 && (
                 <ul className="attachments-list">
-                  {courseAttachments.map((file, idx) => (
-                    <li key={idx} className="attachment-item">
-                      <a href={file.url} target="_blank" rel="noopener noreferrer">
-                        {file.name}
-                      </a>
-                      <button
-                        type="button"
-                        className="danger-icon small-icon"
-                        onClick={() => removeAttachment(idx)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                  {courseAttachments.map((material, idx) => (
+                    <li key={material.id || `${material.url}-${idx}`} className="attachment-item">
+                      <div className="material-item-icon" aria-hidden>
+                        {material.kind === 'link' ? <Link2 size={17} /> : <FileText size={17} />}
+                      </div>
+                      <div className="material-item-copy">
+                        <span>{material.week || 'مواد عامة'}</span>
+                        <a href={material.url} target="_blank" rel="noopener noreferrer">
+                          {material.name}
+                        </a>
+                        <small>{material.kind === 'link' ? 'رابط خارجي' : 'ملف مرفوع'}</small>
+                      </div>
+                      <div className="material-item-actions">
+                        <button
+                          type="button"
+                          className="ghost-icon small-icon"
+                          onClick={() => moveAttachment(idx, -1)}
+                          disabled={idx === 0}
+                          aria-label={`نقل ${material.name} إلى أعلى`}
+                        >
+                          <ChevronUp size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-icon small-icon"
+                          onClick={() => moveAttachment(idx, 1)}
+                          disabled={idx === courseAttachments.length - 1}
+                          aria-label={`نقل ${material.name} إلى أسفل`}
+                        >
+                          <ChevronDown size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-icon small-icon"
+                          onClick={() => removeAttachment(idx)}
+                          aria-label={`حذف ${material.name}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>

@@ -1,4 +1,14 @@
-import type { CorrectAnswer, CourseStatus, Dawra, Exam, Question, QuestionType, Submission, SheikhProfile } from '../types';
+import type {
+  CorrectAnswer,
+  CourseAttachment,
+  CourseStatus,
+  Dawra,
+  Exam,
+  Question,
+  QuestionType,
+  Submission,
+  SheikhProfile,
+} from '../types';
 import { createExamSlug } from './examLinks';
 import { requireSupabase } from './supabase';
 
@@ -58,6 +68,29 @@ function normalizeQuestion(row: any): Question {
   };
 }
 
+function normalizeCourseAttachments(value: unknown): CourseAttachment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return [];
+
+    const attachment = item as Record<string, unknown>;
+    const name = typeof attachment.name === 'string' ? attachment.name.trim() : '';
+    const url = typeof attachment.url === 'string' ? attachment.url.trim() : '';
+    if (!name || !url) return [];
+
+    return [{
+      id: typeof attachment.id === 'string' && attachment.id
+        ? attachment.id
+        : `legacy-${index}-${url}`,
+      name,
+      url,
+      kind: attachment.kind === 'link' ? 'link' : 'file',
+      week: typeof attachment.week === 'string' ? attachment.week.trim() : '',
+    }];
+  });
+}
+
 function normalizeDawra(row: any): Dawra {
   const status = (row.status === 'active' ? 'in_progress' : row.status || 'draft') as CourseStatus;
 
@@ -71,7 +104,7 @@ function normalizeDawra(row: any): Dawra {
     status,
     theme_color: row.theme_color || null,
     duration: row.duration || null,
-    attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    attachments: normalizeCourseAttachments(row.attachments),
     created_at: row.created_at,
   };
 }
@@ -287,7 +320,7 @@ export async function createDawra(input: {
   status: CourseStatus;
   duration: string;
   startsOn: string;
-  attachments: any[];
+  attachments: CourseAttachment[];
 }) {
   const client = requireSupabase();
   const { data, error } = await client
@@ -318,7 +351,7 @@ export async function updateDawra(id: string, input: {
   status: CourseStatus;
   duration: string;
   startsOn: string;
-  attachments: any[];
+  attachments: CourseAttachment[];
 }) {
   const client = requireSupabase();
   const { data, error } = await client

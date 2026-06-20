@@ -481,6 +481,25 @@ code {
 }
 .danger-icon:disabled { opacity: 0.35; }
 
+.ghost-icon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--muted);
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.ghost-icon:hover:not(:disabled) {
+  border-color: rgb(13 122 111 / 0.3);
+  background: var(--emerald-soft);
+  color: var(--emerald-dark);
+}
+.ghost-icon:disabled { opacity: 0.32; }
+
 .small { min-height: 34px; padding: 6px 11px; font-size: 0.83rem; border-radius: var(--radius-sm); }
 .small-icon { width: 34px; height: 34px; }
 
@@ -911,18 +930,18 @@ code {
 }
 
 .attachments-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   gap: 8px;
 }
 
 .attachment-download-link {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 7px;
-  max-width: 100%;
-  min-height: 36px;
-  padding: 7px 10px;
+  min-height: 52px;
+  padding: 9px 11px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
@@ -942,6 +961,29 @@ code {
 .attachment-download-link span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.attachment-download-link small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.course-material-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.course-material-group {
+  display: grid;
+  gap: 7px;
+}
+
+.course-material-group h3 {
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 900;
 }
 
 .toggle-exams-btn {
@@ -2169,7 +2211,7 @@ code {
 
 .attachments-builder {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-elevated);
@@ -2182,14 +2224,80 @@ code {
   font-weight: 800;
 }
 
-.attachment-add-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) auto;
-  gap: 10px;
-  align-items: center;
+.materials-builder-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.attachment-add-row input {
+.materials-builder-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.materials-builder-heading small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.materials-count {
+  flex: 0 0 auto;
+  border: 1px solid rgb(13 122 111 / 0.2);
+  border-radius: 999px;
+  background: var(--emerald-soft);
+  color: var(--emerald-dark);
+  padding: 5px 9px;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.material-kind-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.material-kind-options button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.material-kind-options button.selected {
+  border-color: rgb(13 122 111 / 0.34);
+  background: var(--emerald-soft);
+  color: var(--emerald-dark);
+}
+
+.material-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.material-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.material-field > span {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.material-field input {
   min-width: 0;
   width: 100%;
   border: 1.5px solid var(--line);
@@ -2201,9 +2309,22 @@ code {
   text-align: right;
 }
 
-.attachment-add-row input:focus {
+.material-field input:focus {
   border-color: var(--emerald);
   box-shadow: var(--shadow-glow);
+}
+
+.material-field input[dir="ltr"] {
+  text-align: left;
+}
+
+.material-source-field {
+  grid-column: 1 / -1;
+}
+
+.material-add-button {
+  grid-column: 1 / -1;
+  justify-self: start;
 }
 
 .file-input-hidden {
@@ -2238,7 +2359,7 @@ code {
 
 .attachment-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   border: 1px solid var(--line);
@@ -2247,7 +2368,29 @@ code {
   padding: 8px 10px;
 }
 
-.attachment-item a {
+.material-item-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--emerald-soft);
+  color: var(--emerald-dark);
+}
+
+.material-item-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.material-item-copy > span {
+  color: var(--gold);
+  font-size: 0.73rem;
+  font-weight: 900;
+}
+
+.material-item-copy a {
   min-width: 0;
   color: var(--emerald-dark);
   font-size: 0.84rem;
@@ -2256,8 +2399,18 @@ code {
   overflow-wrap: anywhere;
 }
 
-.attachment-item a:hover {
+.material-item-copy a:hover {
   text-decoration: underline;
+}
+
+.material-item-copy small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.material-item-actions {
+  display: flex;
+  gap: 5px;
 }
 
 /* Question builder */
@@ -2958,8 +3111,13 @@ body {
 
   .progress-strip { top: 108px; }
 
-  .attachment-add-row {
+  .material-fields-grid {
     grid-template-columns: 1fr;
+  }
+
+  .material-source-field,
+  .material-add-button {
+    grid-column: auto;
   }
 
   .admin-metrics,
@@ -3187,6 +3345,15 @@ body {
   .attachments-grid,
   .item-actions {
     align-items: stretch;
+  }
+
+  .attachment-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .material-item-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
   }
 
   .item-actions > button,

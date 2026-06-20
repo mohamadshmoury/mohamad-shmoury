@@ -1,9 +1,14 @@
 export type QuestionType = 'multiple_choice' | 'true_false' | 'short_answer';
 export type ExamStatus = 'passed' | 'failed';
 
+export type CourseMaterialKind = 'file' | 'link';
+
 export interface CourseAttachment {
+  id?: string;
   name: string;
   url: string;
+  kind?: CourseMaterialKind;
+  week?: string;
 }
 
 export type CourseStatus = 'draft' | 'active' | 'in_progress' | 'completed' | 'archived';
