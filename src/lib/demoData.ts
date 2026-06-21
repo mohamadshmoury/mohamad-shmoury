@@ -10,6 +10,8 @@ export const demoExams: Exam[] = [
     passing_score: 70,
     allow_multiple_attempts: true,
     show_results_immediately: true,
+    ends_at: null,
+    show_answers_after_end: false,
     is_published: true,
     dawra: {
       id: 'demo-dawra-001',

@@ -4,6 +4,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Circle,
+  Clock3,
+  Eye,
   Loader2,
   RotateCcw,
   Send,
@@ -12,7 +14,8 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { checkExistingSubmission, createSubmission, getExamWithQuestions } from '../lib/examService';
-import { scoreExam } from '../lib/scoring';
+import { formatExamEndTime, isExamEnded } from '../lib/examTiming';
+import { getCorrectAnswerLabel, scoreExam } from '../lib/scoring';
 import type { Exam, Question, Submission } from '../types';
 
 interface AssessmentFlowProps {
@@ -49,6 +52,81 @@ function answerLabel(question: Question, answer: string) {
   return answer;
 }
 
+function ExamAnswerReview({ exam, questions }: { exam: Exam; questions: Question[] }) {
+  return (
+    <main className="content-band assessment-review-shell">
+      <section className="tool-panel">
+        <div className="section-heading compact">
+          <span className="section-kicker">
+            <Eye size={16} aria-hidden />
+            انتهى الاختبار
+          </span>
+          <h2>{exam.title}</h2>
+          <p>يمكنك الآن مراجعة أسئلة الاختبار وإجاباتها الصحيحة مباشرة.</p>
+        </div>
+
+        <div className="public-answer-review">
+          {questions.map((question, index) => (
+            <article className="public-answer-card" key={question.id}>
+              <div className="public-answer-heading">
+                <span className="question-number">{index + 1}</span>
+                <div>
+                  <small>
+                    {question.type === 'multiple_choice'
+                      ? 'اختيار من متعدد'
+                      : question.type === 'true_false'
+                        ? 'صح أو خطأ'
+                        : 'إجابة قصيرة'}
+                  </small>
+                  <h3>{question.prompt}</h3>
+                </div>
+                <span>{question.points} نقطة</span>
+              </div>
+
+              {question.type === 'multiple_choice' && (
+                <div className="public-review-options">
+                  {question.options.map((option, optionIndex) => {
+                    const correct = option === question.correct_answer.value;
+                    return (
+                      <div className={correct ? 'is-correct' : ''} key={option}>
+                        {correct ? <CheckCircle2 size={17} aria-hidden /> : <Circle size={17} aria-hidden />}
+                        <strong>{OPTION_LABELS[optionIndex] || optionIndex + 1}</strong>
+                        <span>{option}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {question.type === 'true_false' && (
+                <div className="public-review-options true-false">
+                  {TRUE_FALSE_OPTIONS.map((option) => {
+                    const correct = option.value === question.correct_answer.value;
+                    return (
+                      <div className={correct ? 'is-correct' : ''} key={option.value}>
+                        {correct ? <CheckCircle2 size={17} aria-hidden /> : <Circle size={17} aria-hidden />}
+                        <span>{option.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="public-correct-answer">
+                <span>الإجابة الصحيحة:</span>
+                <strong>{getCorrectAnswerLabel(question)}</strong>
+              </div>
+              {question.explanation && (
+                <p className="public-answer-explanation">{question.explanation}</p>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowProps) {
   const [exam, setExam] = useState<Exam>(examSummary);
   const [loading, setLoading] = useState(true);
@@ -66,11 +144,14 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [result, setResult] = useState<Submission | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const startedAtRef = useRef<string>('');
+  const autoSubmittedRef = useRef(false);
 
   const questions = useMemo(() => exam.questions || [], [exam.questions]);
   const currentQuestion = questions[currentIndex];
   const answeredCount = Object.values(answers).filter(Boolean).length;
+  const examEnded = isExamEnded(exam, now);
 
   useEffect(() => {
     let mounted = true;
@@ -104,6 +185,12 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
     };
   }, [examSummary]);
 
+  useEffect(() => {
+    if (!exam.ends_at) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [exam.ends_at]);
+
   function updateProfile(field: keyof StudentProfile, value: string) {
     setProfile((prev) => ({ ...prev, [field]: value }));
     setFormError('');
@@ -111,6 +198,11 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
 
   async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isExamEnded(exam)) {
+      setNow(Date.now());
+      setFormError('انتهى موعد الاختبار ولم يعد من الممكن بدء محاولة جديدة.');
+      return;
+    }
     const name = profile.studentName.trim();
     const phone = profile.phone.trim();
     const email = profile.email.trim().toLowerCase();
@@ -223,6 +315,12 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
     }
   }
 
+  useEffect(() => {
+    if (stage !== 'questions' || !examEnded || autoSubmittedRef.current || submitting) return;
+    autoSubmittedRef.current = true;
+    void submitExam();
+  }, [examEnded, stage, submitting]);
+
   if (loading) {
     return (
       <main className="centered-screen">
@@ -262,6 +360,8 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
 
   if (stage === 'result' && result) {
     const isPassed = result.status === 'passed';
+    const showDetailedAnswers =
+      exam.show_results_immediately || (examEnded && exam.show_answers_after_end);
     return (
       <motion.main 
         className="content-band"
@@ -297,14 +397,14 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
             </div>
           </div>
 
-          {!exam.show_results_immediately && (
+          {!showDetailedAnswers && (
             <div className="notice warning full">
               <AlertTriangle size={18} aria-hidden />
               <span>لا يمكن عرض الإجابات الصحيحة حالياً بناءً على إعدادات الاختبار. ستُعلن النتائج التفصيلية لاحقاً.</span>
             </div>
           )}
 
-          {exam.show_results_immediately && (
+          {showDetailedAnswers && (
             <div className="result-answers-list">
               <h3>مراجعة الإجابات</h3>
               {result.answers.map((answer, index) => (
@@ -341,6 +441,26 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
           </div>
         </section>
       </motion.main>
+    );
+  }
+
+  if (examEnded) {
+    if (exam.show_answers_after_end) {
+      return <ExamAnswerReview exam={exam} questions={questions} />;
+    }
+
+    return (
+      <main className="centered-screen">
+        <Clock3 size={30} aria-hidden />
+        <strong>انتهى موعد الاختبار</strong>
+        <span>
+          انتهى الاختبار في {formatExamEndTime(exam.ends_at)}. لم تُتح الأسئلة والإجابات للعرض بعد.
+        </span>
+        <button className="secondary-action" onClick={onBack} type="button">
+          <ArrowRight size={18} aria-hidden />
+          العودة
+        </button>
+      </main>
     );
   }
 

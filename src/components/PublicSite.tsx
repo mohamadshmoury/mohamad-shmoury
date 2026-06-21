@@ -15,11 +15,13 @@ import {
   Link2,
   User,
   ArrowDown,
+  Eye,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { demoExams } from '../lib/demoData';
 import { getPublishedExams, getAllDawrat, getSheikhProfile } from '../lib/examService';
+import { formatExamEndTime, isExamEnded } from '../lib/examTiming';
 import type { CourseAttachment, CourseStatus, Exam, Dawra, SheikhProfile } from '../types';
 
 interface PublicSiteProps {
@@ -35,10 +37,13 @@ interface CardState {
 function ExamStarter({
   exam,
   onStart,
+  now,
 }: {
   exam: Exam;
   onStart: (exam: Exam) => void;
+  now: number;
 }) {
+  const ended = isExamEnded(exam, now);
   const requiresCode = !!exam.access_code;
   const [card, setCard] = useState<CardState>({ code: '', error: '', unlocking: false });
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +74,28 @@ function ExamStarter({
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') handleUnlock();
+  }
+
+  if (ended) {
+    if (exam.show_answers_after_end) {
+      return (
+        <button
+          className="primary-action start-exam-btn"
+          onClick={() => onStart(exam)}
+          type="button"
+        >
+          <Eye size={14} aria-hidden />
+          عرض الأسئلة والإجابات
+        </button>
+      );
+    }
+
+    return (
+      <span className="exam-ended-message">
+        <Clock size={14} aria-hidden />
+        انتهى الاختبار
+      </span>
+    );
   }
 
   if (requiresCode) {
@@ -174,11 +201,13 @@ function CourseCard({
   exams,
   demoMode,
   onStartExam,
+  now,
 }: {
   dawra: Dawra;
   exams: Exam[];
   demoMode: boolean;
   onStartExam: (exam: Exam) => void;
+  now: number;
 }) {
   const status = normalizeCourseStatus(dawra.status);
   const isInProgress = status === 'in_progress';
@@ -299,9 +328,15 @@ function CourseCard({
                       درجة النجاح: {exam.passing_score}%
                       {!exam.show_results_immediately && ' • تُعلن النتائج لاحقاً'}
                     </span>
+                    {exam.ends_at && (
+                      <span className={`nested-exam-badge exam-time-status ${isExamEnded(exam, now) ? 'is-ended' : ''}`}>
+                        <Clock size={12} aria-hidden />
+                        {isExamEnded(exam, now) ? 'انتهى في' : 'ينتهي في'} {formatExamEndTime(exam.ends_at)}
+                      </span>
+                    )}
                   </div>
                   <div className="nested-exam-action">
-                    <ExamStarter exam={exam} onStart={onStartExam} />
+                    <ExamStarter exam={exam} onStart={onStartExam} now={now} />
                   </div>
                 </div>
               ))}
@@ -329,6 +364,7 @@ export default function PublicSite({ onStartExam }: PublicSiteProps) {
   const [profile, setProfile] = useState<SheikhProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const activeCourseCount = dawrat.filter((dawra) => normalizeCourseStatus(dawra.status) === 'in_progress').length;
   const completedCourseCount = dawrat.filter((dawra) => dawra.status === 'completed').length;
   const examCount = exams.length;
@@ -393,6 +429,11 @@ export default function PublicSite({ onStartExam }: PublicSiteProps) {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   return (
@@ -545,6 +586,7 @@ export default function PublicSite({ onStartExam }: PublicSiteProps) {
                   exams={dawraExams}
                   demoMode={demoMode}
                   onStartExam={onStartExam}
+                  now={now}
                 />
               );
             })}

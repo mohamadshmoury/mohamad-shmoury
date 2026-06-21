@@ -120,6 +120,8 @@ function normalizeExam(row: any): Exam {
     allow_multiple_attempts: Boolean(row.allow_multiple_attempts),
     is_published: Boolean(row.is_published),
     show_results_immediately: row.show_results_immediately !== false,
+    ends_at: row.ends_at || null,
+    show_answers_after_end: Boolean(row.show_answers_after_end),
     created_at: row.created_at,
     dawra: row.dawra || row.shmoury_dawrat || null,
   };
@@ -382,6 +384,7 @@ export async function createExamForDawra(input: {
   passingScore: number;
   isPublished: boolean;
   showResultsImmediately: boolean;
+  endsAt: string | null;
 }) {
   const client = requireSupabase();
   const { data, error } = await client
@@ -394,6 +397,8 @@ export async function createExamForDawra(input: {
       passing_score: input.passingScore,
       is_published: input.isPublished,
       show_results_immediately: input.showResultsImmediately,
+      ends_at: input.endsAt,
+      show_answers_after_end: false,
       allow_multiple_attempts: false,
     })
     .select('*, dawra:shmoury_dawrat(*)')
@@ -410,6 +415,8 @@ export async function updateExamSettings(examId: string, input: {
   passingScore?: number;
   isPublished?: boolean;
   showResultsImmediately?: boolean;
+  endsAt?: string | null;
+  showAnswersAfterEnd?: boolean;
 }) {
   const client = requireSupabase();
   const updates: any = {};
@@ -419,6 +426,8 @@ export async function updateExamSettings(examId: string, input: {
   if (input.passingScore !== undefined) updates.passing_score = input.passingScore;
   if (input.isPublished !== undefined) updates.is_published = input.isPublished;
   if (input.showResultsImmediately !== undefined) updates.show_results_immediately = input.showResultsImmediately;
+  if (input.endsAt !== undefined) updates.ends_at = input.endsAt;
+  if (input.showAnswersAfterEnd !== undefined) updates.show_answers_after_end = input.showAnswersAfterEnd;
 
   const { data, error } = await client
     .from(EXAMS_TABLE)

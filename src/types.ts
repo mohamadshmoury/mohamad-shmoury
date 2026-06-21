@@ -62,6 +62,8 @@ export interface Exam {
   allow_multiple_attempts: boolean;
   is_published: boolean;
   show_results_immediately: boolean;
+  ends_at: string | null;
+  show_answers_after_end: boolean;
   created_at?: string;
   dawra?: Dawra | null;
   questions?: Question[];

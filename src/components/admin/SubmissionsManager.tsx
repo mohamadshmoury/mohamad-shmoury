@@ -80,15 +80,24 @@ export default function SubmissionsManager({
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
 
   const filteredSubmissions = useMemo(() => {
-    if (!search.trim()) return submissions;
-    const q = search.trim().toLowerCase();
-    return submissions.filter((row) =>
-      [row.student_name, row.phone, row.email || '', row.status]
-        .join(' ')
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [submissions, search]);
+    let filtered = submissions;
+    
+    if (selectedExamId) {
+      filtered = filtered.filter(s => s.exam_id === selectedExamId);
+    }
+    
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      filtered = filtered.filter((row) =>
+        [row.student_name, row.phone, row.email || '', row.status]
+          .join(' ')
+          .toLowerCase()
+          .includes(q),
+      );
+    }
+    
+    return filtered;
+  }, [submissions, search, selectedExamId]);
 
   async function saveReview(submission: Submission) {
     setLoading(true);

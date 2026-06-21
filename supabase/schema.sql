@@ -24,6 +24,8 @@ create table if not exists public.shmoury_exams (
   allow_multiple_attempts boolean not null default false,
   is_published boolean not null default false,
   show_results_immediately boolean not null default true,
+  ends_at timestamptz,
+  show_answers_after_end boolean not null default false,
   created_at timestamptz not null default now()
 );
 

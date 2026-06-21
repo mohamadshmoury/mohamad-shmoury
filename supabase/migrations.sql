@@ -46,6 +46,8 @@ alter table public.shmoury_dawrat
 
 -- 5. Add show_results_immediately to shmoury_exams
 alter table public.shmoury_exams add column if not exists show_results_immediately boolean not null default true;
+alter table public.shmoury_exams add column if not exists ends_at timestamptz;
+alter table public.shmoury_exams add column if not exists show_answers_after_end boolean not null default false;
 
 -- 6. Public storage bucket for course files and sheikh profile images
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

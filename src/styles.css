@@ -1013,7 +1013,7 @@ code {
 
 .nested-exam-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(140px, 0.42fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
   border: 1px solid var(--line);
@@ -3085,6 +3085,154 @@ body {
   line-height: 1.7;
 }
 
+.exam-deadline-badge,
+.exam-time-status,
+.exam-ended-message {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+}
+
+.exam-deadline-badge {
+  width: fit-content;
+  margin-top: 7px !important;
+  border-radius: var(--radius);
+  padding: 5px 9px;
+  background: var(--emerald-soft);
+  color: var(--emerald-dark) !important;
+  font-weight: 800;
+}
+
+.exam-deadline-badge.is-ended,
+.exam-time-status.is-ended,
+.exam-ended-message {
+  background: rgb(140 54 54 / 0.09);
+  color: #8c3636 !important;
+}
+
+.exam-time-status {
+  width: fit-content;
+  margin-top: 6px !important;
+}
+
+.exam-ended-message {
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid rgb(140 54 54 / 0.18);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.assessment-review-shell {
+  max-width: 920px;
+  margin-inline: auto;
+}
+
+.public-answer-review {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.public-answer-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  padding: 16px;
+}
+
+.public-answer-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 11px;
+}
+
+.public-answer-heading .question-number {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--emerald);
+  color: #fff;
+  font-weight: 900;
+}
+
+.public-answer-heading small {
+  color: var(--emerald-dark);
+  font-weight: 800;
+}
+
+.public-answer-heading h3 {
+  margin: 3px 0 0;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.public-answer-heading > span:last-child {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.public-review-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 13px 43px 0 0;
+}
+
+.public-review-options > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  color: var(--muted);
+}
+
+.public-review-options > div.is-correct {
+  border-color: rgb(13 122 111 / 0.3);
+  background: var(--emerald-soft);
+  color: var(--emerald-dark);
+  font-weight: 800;
+}
+
+.public-correct-answer {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 12px 43px 0 0;
+  border-inline-start: 4px solid var(--emerald);
+  border-radius: var(--radius);
+  background: var(--emerald-soft);
+  padding: 9px 11px;
+}
+
+.public-correct-answer span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.public-correct-answer strong {
+  color: var(--emerald-dark);
+}
+
+.public-answer-explanation {
+  margin: 8px 43px 0 0;
+  border-radius: var(--radius);
+  background: var(--gold-soft);
+  padding: 9px 11px;
+  color: #75571f;
+  line-height: 1.7;
+}
+
 /* ─── Responsive Breakpoints ─────────────────────────────────────────── */
 
 /* Tablet ≤ 1024px */
@@ -3306,6 +3454,24 @@ body {
   }
 
   .segmented-options { grid-template-columns: 1fr; }
+
+  .public-answer-heading {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .public-answer-heading > span:last-child {
+    grid-column: 2;
+  }
+
+  .public-review-options {
+    grid-template-columns: 1fr;
+    margin-inline-start: 0;
+  }
+
+  .public-correct-answer,
+  .public-answer-explanation {
+    margin-inline-start: 0;
+  }
 
   .course-group-header,
   .course-exam-row,

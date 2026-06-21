@@ -1,7 +1,24 @@
-import { Copy, FileQuestion, Loader2 } from 'lucide-react';
-import { FormEvent, useState } from 'react';
-import { createExamForDawra, updateExamSettings, updateExamPublishState, deleteExam } from '../../lib/examService';
+import { Clock3, Copy, Eye, EyeOff, FileDown, FileQuestion, Loader2 } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
+import {
+  createExamForDawra,
+  deleteExam,
+  getExamWithQuestions,
+  updateExamPublishState,
+  updateExamSettings,
+} from '../../lib/examService';
 import { copyText, createExamSlug, getExamShareUrl } from '../../lib/examLinks';
+import {
+  openExamPrintWindow,
+  renderExamPrintError,
+  renderExamPrintPreview,
+} from '../../lib/examPdf';
+import {
+  formatExamEndTime,
+  fromDateTimeLocalValue,
+  isExamEnded,
+  toDateTimeLocalValue,
+} from '../../lib/examTiming';
 import type { Dawra, Exam, CourseStatus } from '../../types';
 
 interface ExamManagerProps {
@@ -52,7 +69,15 @@ export default function ExamManager({
     passingScore: 70,
     isPublished: true,
     showResultsImmediately: true,
+    endsAt: '',
   });
+  const [exportingExamId, setExportingExamId] = useState('');
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const selectedDawra = dawrat.find((dawra) => dawra.id === selectedDawraId) || null;
   const selectedDawraExams = selectedDawraId
@@ -95,6 +120,7 @@ export default function ExamManager({
           passingScore: Number(examForm.passingScore) || 70,
           isPublished: examForm.isPublished,
           showResultsImmediately: examForm.showResultsImmediately,
+          endsAt: fromDateTimeLocalValue(examForm.endsAt),
         });
         setExams((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
         setNotice('تم تحديث الاختبار بنجاح.');
@@ -109,6 +135,7 @@ export default function ExamManager({
           passingScore: Number(examForm.passingScore) || 70,
           isPublished: examForm.isPublished,
           showResultsImmediately: examForm.showResultsImmediately,
+          endsAt: fromDateTimeLocalValue(examForm.endsAt),
         });
         setExams((prev) => [created, ...prev]);
         setSelectedExamId(created.id);
@@ -120,6 +147,7 @@ export default function ExamManager({
           examDescription: '',
           accessCode: '',
           showResultsImmediately: true,
+          endsAt: '',
         }));
       }
     } catch (createError) {
@@ -143,6 +171,7 @@ export default function ExamManager({
       passingScore: exam.passing_score,
       isPublished: exam.is_published,
       showResultsImmediately: exam.show_results_immediately,
+      endsAt: toDateTimeLocalValue(exam.ends_at),
     });
     if (exam.dawra_id) selectDawra(exam.dawra_id);
     setNotice('تم تحميل بيانات الاختبار للتعديل.');
@@ -159,6 +188,7 @@ export default function ExamManager({
       passingScore: 70,
       isPublished: true,
       showResultsImmediately: true,
+      endsAt: '',
     });
     setNotice('');
   }
@@ -191,6 +221,27 @@ export default function ExamManager({
       setNotice('تم تحديث إعدادات عرض النتائج.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'تعذر تحديث إعدادات الاختبار.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function togglePostEndAnswers(exam: Exam) {
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await updateExamSettings(exam.id, {
+        showAnswersAfterEnd: !exam.show_answers_after_end,
+      });
+      setExams((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setNotice(
+        updated.show_answers_after_end
+          ? 'أصبحت الأسئلة والإجابات متاحة للعرض بعد انتهاء الاختبار.'
+          : 'تم إخفاء الأسئلة والإجابات عن الطلاب.',
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذر تحديث عرض الأسئلة والإجابات.');
     } finally {
       setLoading(false);
     }
@@ -234,6 +285,34 @@ export default function ExamManager({
       setNotice(`تم نسخ الرابط المباشر لاختبار "${exam.title}".`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'تعذر نسخ رابط الاختبار.');
+    }
+  }
+
+  async function exportExamPdf(exam: Exam) {
+    setError('');
+    setNotice('');
+
+    const printWindow = openExamPrintWindow();
+    if (!printWindow) {
+      setError('تعذر فتح معاينة PDF. اسمح بالنوافذ المنبثقة لهذا الموقع ثم حاول مرة أخرى.');
+      return;
+    }
+
+    setExportingExamId(exam.id);
+    try {
+      const examWithQuestions = await getExamWithQuestions(exam.id);
+      if (!examWithQuestions.questions?.length) {
+        throw new Error('أضف سؤالًا واحدًا على الأقل قبل إنشاء ملف PDF.');
+      }
+
+      renderExamPrintPreview(printWindow, examWithQuestions);
+      setNotice(`تم تجهيز "${exam.title}" بحيث تظهر الإجابة مباشرة تحت كل سؤال. اختر حفظ بتنسيق PDF من نافذة الطباعة.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'تعذر تجهيز ملف PDF.';
+      renderExamPrintError(printWindow, message);
+      setError(message);
+    } finally {
+      setExportingExamId('');
     }
   }
 
@@ -299,6 +378,15 @@ export default function ExamManager({
               type="number"
             />
           </label>
+          <label className="field full">
+            <span>موعد انتهاء الاختبار</span>
+            <input
+              value={examForm.endsAt}
+              onChange={(event) => setExamForm((prev) => ({ ...prev, endsAt: event.target.value }))}
+              type="datetime-local"
+            />
+            <small>بعد هذا الموعد يتوقف بدء الاختبار وتظهر للإدارة إمكانية نشر الأسئلة مع الإجابات.</small>
+          </label>
           <label className="check-row full">
             <input
               checked={examForm.isPublished}
@@ -359,8 +447,44 @@ export default function ExamManager({
                     رمز الدخول: <strong>{exam.access_code}</strong>
                   </span>
                 )}
+                {exam.ends_at && (
+                  <span className={`exam-deadline-badge ${isExamEnded(exam, now) ? 'is-ended' : ''}`}>
+                    <Clock3 size={13} aria-hidden />
+                    {isExamEnded(exam, now) ? 'انتهى في' : 'ينتهي في'} {formatExamEndTime(exam.ends_at)}
+                  </span>
+                )}
               </div>
               <div className="item-actions">
+                <button
+                  className="primary-action small"
+                  onClick={() => exportExamPdf(exam)}
+                  type="button"
+                  disabled={exportingExamId === exam.id}
+                  title="إنشاء نسخة أسئلة يتبعها نموذج الإجابة الصحيحة"
+                >
+                  {exportingExamId === exam.id ? (
+                    <Loader2 className="spin" size={15} aria-hidden />
+                  ) : (
+                    <FileDown size={15} aria-hidden />
+                  )}
+                  PDF سؤال وإجابة
+                </button>
+                {isExamEnded(exam, now) && (
+                  <button
+                    className={exam.show_answers_after_end ? 'secondary-action small' : 'primary-action small'}
+                    onClick={() => togglePostEndAnswers(exam)}
+                    type="button"
+                    disabled={loading}
+                    title="التحكم في ظهور أسئلة الاختبار وإجاباتها الصحيحة للطلاب"
+                  >
+                    {exam.show_answers_after_end ? (
+                      <EyeOff size={15} aria-hidden />
+                    ) : (
+                      <Eye size={15} aria-hidden />
+                    )}
+                    {exam.show_answers_after_end ? 'إخفاء الأسئلة والإجابات' : 'عرض الأسئلة والإجابات'}
+                  </button>
+                )}
                 <button
                   className="secondary-action small"
                   onClick={() => copyExamLink(exam)}
