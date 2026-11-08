@@ -172,7 +172,7 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
         <aside className="gh-requirements" aria-label="شروط الاستحقاق">
           <h2>شروط الاستحقاق</h2>
           <ol>
-            <li><strong>ثلاثة أيام:</strong> إجازة حسب الجنس، مع شهادة مشاركة وحضور.</li>
+            <li><strong>ثلاثة أيام:</strong> إجازة، مع شهادة مشاركة وحضور.</li>
             <li><strong>يوم أو يومان:</strong> شهادة مشاركة وحضور فقط.</li>
             <li><strong>دون حضور:</strong> لا يصدر أي مستند.</li>
           </ol>
@@ -195,7 +195,6 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
           {step === 'form' && !loading && (
             <form className="gh-form" onSubmit={review} noValidate>
               <div className="gh-section-heading">
-                <span>بيانات المستفيد</span>
                 <h2>أدخل الاسم وأجب عن الحضور</h2>
                 <p>سيظهر الاسم المكتوب أدناه كما هو على المستندات الصادرة. لا نقيّد الأسماء المركبة بعدد كلمات محدد.</p>
               </div>
