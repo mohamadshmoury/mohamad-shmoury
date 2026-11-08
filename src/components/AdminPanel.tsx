@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Award,
   BookOpen,
   BookPlus,
   FileQuestion,
@@ -25,25 +26,23 @@ import {
   QuestionManager,
   SubmissionsManager,
   ProfileManager,
+  GhawthaniManager,
 } from './admin';
+import { GH_ADMIN_TOKEN_KEY, loginGhawthaniAdmin } from '../lib/ghawthaniService';
 
 interface AdminPanelProps {
   onBack: () => void;
 }
 
-type AdminTab = 'courses' | 'exams' | 'questions' | 'submissions' | 'profile';
-
-const ADMIN_SESSION_KEY = 'shmoury_admin_authenticated';
-const adminCode = import.meta.env.VITE_ADMIN_ACCESS_CODE || 'Mohamad123456_Quran';
+type AdminTab = 'courses' | 'exams' | 'questions' | 'submissions' | 'profile' | 'ghawthani';
 
 function normalizeCourseStatus(status: CourseStatus): CourseStatus {
   return status === 'active' ? 'in_progress' : status;
 }
 
 export default function AdminPanel({ onBack }: AdminPanelProps) {
-  const [authenticated, setAuthenticated] = useState(
-    () => sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true',
-  );
+  const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem(GH_ADMIN_TOKEN_KEY) || '');
+  const authenticated = Boolean(adminToken);
   const [loginCode, setLoginCode] = useState('');
   const [loginError, setLoginError] = useState('');
   const [activeTab, setActiveTab] = useState<AdminTab>('courses');
@@ -119,20 +118,25 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     };
   }, [selectedExamId, authenticated]);
 
-  function handleLogin(e: FormEvent) {
+  async function handleLogin(e: FormEvent) {
     e.preventDefault();
-    if (loginCode === adminCode) {
-      sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
-      setAuthenticated(true);
+    setLoading(true);
+    try {
+      const result = await loginGhawthaniAdmin(loginCode);
+      sessionStorage.setItem(GH_ADMIN_TOKEN_KEY, result.token);
+      setAdminToken(result.token);
       setLoginError('');
-    } else {
-      setLoginError('الرمز غير صحيح.');
+      setLoginCode('');
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'تعذر تسجيل الدخول.');
+    } finally {
+      setLoading(false);
     }
   }
 
   function logout() {
-    sessionStorage.removeItem(ADMIN_SESSION_KEY);
-    setAuthenticated(false);
+    sessionStorage.removeItem(GH_ADMIN_TOKEN_KEY);
+    setAdminToken('');
   }
 
   function handleRefresh() {
@@ -180,8 +184,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             <button className="secondary-action" onClick={onBack} type="button">
               العودة للرئيسية
             </button>
-            <button className="primary-action" type="submit">
-              تسجيل الدخول
+            <button className="primary-action" type="submit" disabled={loading || !loginCode}>
+              {loading ? <><Loader2 className="spin" size={17} aria-hidden /> جارٍ التحقق…</> : 'تسجيل الدخول'}
             </button>
           </div>
         </form>
@@ -260,6 +264,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         >
           <BookOpen size={16} aria-hidden />
           الإجابات والنتائج
+        </button>
+        <button
+          className={activeTab === 'ghawthani' ? 'active' : ''}
+          onClick={() => setActiveTab('ghawthani')}
+        >
+          <Award size={16} aria-hidden />
+          إجازات وشهادات دورة الغوثاني
         </button>
         <button
           className={activeTab === 'profile' ? 'active' : ''}
@@ -358,6 +369,14 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             <ProfileManager
               loading={loading}
               setLoading={setLoading}
+              setNotice={setNotice}
+              setError={setError}
+            />
+          )}
+
+          {activeTab === 'ghawthani' && (
+            <GhawthaniManager
+              adminToken={adminToken}
               setNotice={setNotice}
               setError={setError}
             />

@@ -1,13 +1,14 @@
-import { AlertTriangle, BookOpen, GraduationCap, LayoutDashboard, Loader2 } from 'lucide-react';
+import { AlertTriangle, Award, BookOpen, GraduationCap, LayoutDashboard, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AdminPanel from './components/AdminPanel';
 import AssessmentFlow from './components/AssessmentFlow';
+import GhawthaniIjazahPage from './components/GhawthaniIjazahPage';
 import PublicSite from './components/PublicSite';
 import { getPublishedExamWithQuestions } from './lib/examService';
-import { getExamReferenceFromUrl, getExamShareUrl, getHomeUrl } from './lib/examLinks';
+import { getExamReferenceFromUrl, getExamShareUrl } from './lib/examLinks';
 import type { Exam } from './types';
 
-type View = 'home' | 'assessment' | 'admin';
+type View = 'home' | 'assessment' | 'admin' | 'ghawthani';
 type DirectExamState = 'idle' | 'loading' | 'error';
 
 export default function App() {
@@ -18,6 +19,12 @@ export default function App() {
 
   const openExamFromUrl = useCallback(async () => {
     const requestId = ++routeRequestRef.current;
+    if (window.location.pathname.replace(/\/+$/, '').toLowerCase() === '/ejazaghawthani') {
+      setActiveExam(null);
+      setDirectExamState('idle');
+      setView('ghawthani');
+      return;
+    }
     const examReference = getExamReferenceFromUrl();
     if (!examReference) {
       setActiveExam(null);
@@ -57,7 +64,7 @@ export default function App() {
 
   function goHome() {
     routeRequestRef.current += 1;
-    window.history.replaceState({}, '', getHomeUrl());
+    window.history.pushState({}, '', '/');
     setActiveExam(null);
     setDirectExamState('idle');
     setView('home');
@@ -66,10 +73,19 @@ export default function App() {
 
   function openAdmin() {
     routeRequestRef.current += 1;
-    window.history.replaceState({}, '', getHomeUrl());
+    window.history.pushState({}, '', '/');
     setActiveExam(null);
     setDirectExamState('idle');
     setView('admin');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function openGhawthani() {
+    routeRequestRef.current += 1;
+    window.history.pushState({}, '', '/ejazaGhawthani');
+    setActiveExam(null);
+    setDirectExamState('idle');
+    setView('ghawthani');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -98,6 +114,16 @@ export default function App() {
             <span>الدورات</span>
           </button>
           <button
+            className={`nav-btn ${view === 'ghawthani' ? 'active' : ''}`}
+            onClick={openGhawthani}
+            type="button"
+            aria-label="إجازة وشهادة الغوثاني"
+            aria-current={view === 'ghawthani' ? 'page' : undefined}
+          >
+            <Award size={17} aria-hidden />
+            <span>الإجازة والشهادة</span>
+          </button>
+          <button
             className={`nav-btn ${view === 'admin' ? 'active' : ''}`}
             onClick={openAdmin}
             type="button"
@@ -111,6 +137,7 @@ export default function App() {
       </header>
 
       {view === 'home' && <PublicSite onStartExam={startExam} />}
+      {view === 'ghawthani' && <GhawthaniIjazahPage onBack={goHome} />}
       {view === 'assessment' && activeExam && (
         <AssessmentFlow examSummary={activeExam} onBack={goHome} />
       )}
