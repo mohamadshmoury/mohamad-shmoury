@@ -15,11 +15,15 @@ export default function App() {
   const [view, setView] = useState<View>('home');
   const [activeExam, setActiveExam] = useState<Exam | null>(null);
   const [directExamState, setDirectExamState] = useState<DirectExamState>('idle');
+  const [ijazahProgramSlug, setIjazahProgramSlug] = useState('ghawthani');
   const routeRequestRef = useRef(0);
 
   const openExamFromUrl = useCallback(async () => {
     const requestId = ++routeRequestRef.current;
-    if (window.location.pathname.replace(/\/+$/, '').toLowerCase() === '/ejazaghawthani') {
+    const normalizedPath = window.location.pathname.replace(/\/+$/, '');
+    const programMatch = normalizedPath.match(/^\/ejaza\/([a-z0-9-]+)$/i);
+    if (normalizedPath.toLowerCase() === '/ejazaghawthani' || programMatch) {
+      setIjazahProgramSlug(programMatch?.[1].toLowerCase() || 'ghawthani');
       setActiveExam(null);
       setDirectExamState('idle');
       setView('ghawthani');
@@ -83,6 +87,7 @@ export default function App() {
   function openGhawthani() {
     routeRequestRef.current += 1;
     window.history.pushState({}, '', '/ejazaGhawthani');
+    setIjazahProgramSlug('ghawthani');
     setActiveExam(null);
     setDirectExamState('idle');
     setView('ghawthani');
@@ -137,7 +142,7 @@ export default function App() {
       </header>
 
       {view === 'home' && <PublicSite onStartExam={startExam} />}
-      {view === 'ghawthani' && <GhawthaniIjazahPage onBack={goHome} />}
+      {view === 'ghawthani' && <GhawthaniIjazahPage onBack={goHome} programSlug={ijazahProgramSlug} />}
       {view === 'assessment' && activeExam && (
         <AssessmentFlow examSummary={activeExam} onBack={goHome} />
       )}

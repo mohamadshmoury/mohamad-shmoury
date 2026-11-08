@@ -12,12 +12,14 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   documentLabels,
+  getIjazahProgram,
   getGhawthaniStatus,
   GH_PARTICIPANT_SESSION_KEY,
   submitGhawthani,
   type GhawthaniDocument,
   type GhawthaniGender,
   type GhawthaniSubmission,
+  type IjazahProgram,
 } from '../lib/ghawthaniService';
 
 type Answer = boolean | null;
@@ -25,6 +27,7 @@ type Step = 'form' | 'review' | 'result';
 
 interface Props {
   onBack: () => void;
+  programSlug?: string;
 }
 
 function YesNoField({ id, label, value, onChange }: { id: string; label: string; value: Answer; onChange: (value: boolean) => void }) {
@@ -51,7 +54,14 @@ function documentDescription(documents: GhawthaniDocument[]) {
   return '';
 }
 
-export default function GhawthaniIjazahPage({ onBack }: Props) {
+const ghawthaniFallback: IjazahProgram = {
+  id: '', dawra_id: null, slug: 'ghawthani', title: 'إجازة وشهادة دورة الغوثاني',
+  course_subject: 'قراءة وشرح كتاب «كيف تحفظ القرآن الكريم»', instructor_name: 'الشيخ د. يحيى الغوثاني',
+  introduction: 'هذه الاستمارة خاصة بدورة قراءة وشرح كتاب «كيف تحفظ القرآن الكريم» للشيخ د. يحيى الغوثاني.',
+  trust_statement: 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة في النقل عند أهل القرآن والعلم.', is_active: true,
+};
+
+export default function GhawthaniIjazahPage({ onBack, programSlug = 'ghawthani' }: Props) {
   const [step, setStep] = useState<Step>('form');
   const [fullName, setFullName] = useState('');
   const [gender, setGender] = useState<GhawthaniGender | ''>('');
@@ -63,6 +73,8 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
   const [loading, setLoading] = useState(false);
   const [submission, setSubmission] = useState<GhawthaniSubmission | null>(null);
   const [documents, setDocuments] = useState<GhawthaniDocument[]>([]);
+  const [program, setProgram] = useState<IjazahProgram>(ghawthaniFallback);
+  const [programLoading, setProgramLoading] = useState(programSlug !== 'ghawthani');
   const idempotencyRef = useRef(crypto.randomUUID());
 
   const attendanceCount = useMemo(
@@ -71,11 +83,20 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
   );
 
   useEffect(() => {
+    let mounted = true;
+    getIjazahProgram(programSlug)
+      .then(({ program: loaded }) => { if (mounted) setProgram(loaded); })
+      .catch((caught) => { if (mounted && programSlug !== 'ghawthani') setError(caught instanceof Error ? caught.message : 'تعذر تحميل بيانات الدورة.'); })
+      .finally(() => { if (mounted) setProgramLoading(false); });
+    return () => { mounted = false; };
+  }, [programSlug]);
+
+  useEffect(() => {
     const saved = sessionStorage.getItem(GH_PARTICIPANT_SESSION_KEY);
     if (!saved) return;
     try {
-      const { submissionId, accessToken } = JSON.parse(saved);
-      if (!submissionId || !accessToken) return;
+      const { submissionId, accessToken, savedProgramSlug } = JSON.parse(saved);
+      if (!submissionId || !accessToken || (savedProgramSlug && savedProgramSlug !== programSlug)) return;
       setLoading(true);
       getGhawthaniStatus(submissionId, accessToken)
         .then((result) => {
@@ -88,7 +109,7 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
     } catch {
       sessionStorage.removeItem(GH_PARTICIPANT_SESSION_KEY);
     }
-  }, []);
+  }, [programSlug]);
 
   function validate() {
     const trimmed = fullName.trim();
@@ -119,6 +140,7 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
     setError('');
     try {
       const result = await submitGhawthani({
+        program_slug: programSlug,
         full_name: fullName,
         gender,
         attended_day_1: day1,
@@ -130,6 +152,7 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
       sessionStorage.setItem(GH_PARTICIPANT_SESSION_KEY, JSON.stringify({
         submissionId: result.submission.id,
         accessToken: result.access_token,
+        savedProgramSlug: programSlug,
       }));
       setSubmission(result.submission);
       setDocuments(result.documents);
@@ -163,9 +186,9 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
         <button className="gh-back" type="button" onClick={onBack}>
           <ArrowRight size={18} aria-hidden /> العودة إلى المنصة
         </button>
-        <span className="gh-eyebrow"><FileCheck2 size={17} aria-hidden /> إجازة وشهادة دورة الغوثاني</span>
+        <span className="gh-eyebrow"><FileCheck2 size={17} aria-hidden /> {program.title}</span>
         <h1>طلب الإجازة وشهادة المشاركة</h1>
-        <p>هذه الاستمارة خاصة بدورة قراءة وشرح كتاب <strong>«كيف تحفظ القرآن الكريم» للشيخ د. يحيى الغوثاني</strong>.</p>
+        <p>{program.introduction || <>هذه الاستمارة خاصة بدورة <strong>{program.course_subject}</strong>، بإشراف {program.instructor_name}.</>}</p>
       </section>
 
       <div className="gh-layout">
@@ -176,7 +199,7 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
             <li><strong>يوم أو يومان:</strong> شهادة مشاركة وحضور فقط.</li>
             <li><strong>دون حضور:</strong> لا يصدر أي مستند.</li>
           </ol>
-          <p><ShieldCheck size={18} aria-hidden /> تُعتمد إجابات الحضور على الأمانة العلمية والثقة في النقل عند أهل القرآن والعلم.</p>
+          <p><ShieldCheck size={18} aria-hidden /> {program.trust_statement}</p>
         </aside>
 
         <section className="gh-card" aria-live="polite">
@@ -188,11 +211,11 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
             <span className={step === 'result' ? 'active' : ''}>3 <small>الإصدار</small></span>
           </div>
 
-          {loading && step === 'form' && (
+          {(loading || programLoading) && step === 'form' && (
             <div className="gh-state"><Loader2 className="spin" size={30} aria-hidden /><strong>جاري استعادة طلبك السابق…</strong></div>
           )}
 
-          {step === 'form' && !loading && (
+          {step === 'form' && !loading && !programLoading && (
             <form className="gh-form" onSubmit={review} noValidate>
               <div className="gh-section-heading">
                 <h2>أدخل الاسم وأجب عن الحضور</h2>
@@ -200,7 +223,7 @@ export default function GhawthaniIjazahPage({ onBack }: Props) {
               </div>
               <label className="field full">
                 <span>الاسم الثلاثي <b aria-hidden>*</b></span>
-                <input value={fullName} onChange={(event) => setFullName(event.target.value)} maxLength={120} autoComplete="name" placeholder="مثال: عبد الله محمد الغوثاني" />
+                <input value={fullName} onChange={(event) => setFullName(event.target.value)} maxLength={120} autoComplete="name" placeholder="مثال: عبد الله محمد أحمد" />
                 <small>اكتب الاسم كاملًا بالإملاء الذي تريد ظهوره في الإجازة والشهادة.</small>
               </label>
               <fieldset className="gh-question">

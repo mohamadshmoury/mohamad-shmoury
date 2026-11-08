@@ -25,9 +25,9 @@ These are already present in `.env`.
 
 For an existing Supabase project, run `supabase/migrations.sql` to add the profile table, course attachment columns, result visibility setting, and the public `shmoury-assets` storage bucket used by admin uploads.
 
-## Ghawthani Ijazah and Certificate
+## Ijazah and Certificate Programs
 
-The public form is available at `/ejazaGhawthani`. It stores attendance declarations and generates the gender-specific Ijazah and/or participation certificate on the server. Personalized PDFs and templates are kept in the private `ghawthani-private` bucket and are exposed only through short-lived signed URLs.
+The reusable feature supports a separate configuration, templates, submissions, and issuance history for every course. Ghawthani is the seeded first program and remains available at `/ejazaGhawthani`; all programs are also available at `/ejaza/{program-slug}`. Personalized PDFs and templates are kept in the private `ijazah-private` bucket and are exposed only through short-lived signed URLs.
 
 ### Deploy the database and Edge Functions
 
@@ -35,7 +35,7 @@ The public form is available at `/ejazaGhawthani`. It stores attendance declarat
 2. Set the server-only secrets shown in `supabase/.env.example`. Use long random values for both token secrets. The admin code must also remain server-only and must not use a `VITE_` prefix. Set `GH_A_ALLOWED_ORIGINS` to the exact deployed site origin; comma-separate additional trusted origins such as a local admin environment.
 3. Deploy the `ghawthani` and `ghawthani-admin` Edge Functions with Supabase CLI 2.7.0 or newer. Their JWT gateway check is disabled in `supabase/config.toml` because the public submission endpoint and the server-issued admin token perform their own authorization. The same config bundles the Arabic font as a static file; deploy through the normal CLI bundler (not the API-only deployment flag).
 4. Export `SUPABASE_SERVICE_ROLE_KEY` only in the trusted deployment shell, then run `npm run seed:ghawthani`. This uploads the three supplied originals, records their exact page dimensions and placement settings, validates them, and activates one version of each purpose.
-5. Deploy the Vite build. `public/_redirects` and `vercel.json` provide SPA fallbacks for direct visits to `/ejazaGhawthani` on Netlify-compatible and Vercel deployments.
+5. Deploy the Vite build. `public/_redirects` and `vercel.json` provide SPA fallbacks for direct visits to `/ejazaGhawthani` and `/ejaza/{program-slug}` on Netlify-compatible and Vercel deployments.
 
 Example commands for a linked Supabase project:
 
@@ -53,10 +53,10 @@ SUPABASE_SERVICE_ROLE_KEY='server-only-key' npm run seed:ghawthani
 
 ### Template workflow
 
-Open **إجازات وشهادات دورة الغوثاني** in the existing dashboard. Under **إدارة القوالب**, select the purpose, upload a PDF, adjust the name box in PDF points, generate a sample with an Arabic test name, inspect the full-size PDF, approve the sample, then activate that version. Editing an active template creates a new version so earlier issued documents retain their original template reference.
+Open **إجازات وشهادات** in the existing dashboard. Under **إعداد الدورات**, create or select the course program and its public slug. The program selector scopes the requests, statistics, and templates. Under **إدارة القوالب**, upload each PDF, adjust the name box in PDF points, generate a sample with an Arabic test name, inspect the full-size PDF, approve the sample, then activate that version. Editing an active template creates a new version so earlier issued documents retain their original template reference.
 
 ### Security boundary
 
-The Ghawthani tables have RLS enabled and grant no direct access to `anon` or `authenticated`. Eligibility is generated in PostgreSQL from the three attendance booleans; the browser cannot supply it. Submission access uses a per-attempt secret token whose hash is stored, while admin actions require a four-hour HMAC-signed server token. The service-role key is used only inside Edge Functions and the one-time seed command.
+The Ijazah program and issuance tables have RLS enabled and grant no direct access to `anon` or `authenticated`. Eligibility is generated in PostgreSQL from the three attendance booleans; the browser cannot supply it. Submission access uses a per-attempt secret token whose hash is stored, while admin actions require a four-hour HMAC-signed server token. The service-role key is used only inside Edge Functions and the one-time seed command.
 
-The legacy course/exam tables still retain their original permissive policies. The dashboard login is now checked by the server-side Ghawthani admin function, but a future migration should also move legacy course and exam mutations behind authenticated server endpoints.
+The legacy course/exam tables still retain their original permissive policies. The dashboard login is now checked by the server-side Ijazah admin function, but a future migration should also move legacy course and exam mutations behind authenticated server endpoints.

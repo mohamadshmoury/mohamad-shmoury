@@ -3740,8 +3740,20 @@ body {
 
 /* Admin feature */
 .gh-admin { display: grid; gap: 20px; }
+.gh-program-picker { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 360px) auto; align-items: end; gap: 16px; }
+.gh-program-picker > div { display: grid; gap: 4px; }
+.gh-program-picker h2 { color: var(--ink); font-size: 1.35rem; }
+.gh-program-picker p { color: var(--muted); font-size: 0.86rem; }
+.gh-programs-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr); gap: 16px; align-items: start; }
+.gh-program-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.gh-program-form .full { grid-column: 1 / -1; }
+.gh-program-list { display: grid; gap: 10px; }
+.gh-program-list article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-elevated); }
+.gh-program-list article > div:first-child { display: grid; gap: 4px; min-width: 0; }
+.gh-program-list small { color: var(--muted); }
+.gh-program-list code { width: max-content; max-width: 100%; padding: 3px 6px; border-radius: 5px; background: var(--line-soft); color: var(--emerald-dark); overflow-wrap: anywhere; }
 .gh-admin-tabs { display: flex; gap: 6px; padding: 5px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elevated); width: max-content; max-width: 100%; }
-.gh-admin-tabs button { min-height: 38px; padding: 7px 14px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-weight: 900; }
+.gh-admin-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 7px 14px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-weight: 900; }
 .gh-admin-tabs button.active { background: var(--paper); color: var(--emerald-dark); box-shadow: var(--shadow-sm); }
 .gh-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .gh-summary-grid > div { display: grid; gap: 4px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow-sm); }
@@ -3795,6 +3807,8 @@ body {
   .gh-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .gh-filter-bar .search-field { grid-column: 1 / -1; width: 100%; }
   .gh-template-grid { grid-template-columns: 1fr; }
+  .gh-program-picker,
+  .gh-programs-grid { grid-template-columns: 1fr; }
   .gh-template-status { grid-template-columns: 1fr; }
 }
 
@@ -3810,6 +3824,9 @@ body {
   .gh-summary-grid,
   .gh-filter-bar,
   .gh-placement-grid { grid-template-columns: 1fr; }
+  .gh-program-form { grid-template-columns: 1fr; }
+  .gh-program-form .full { grid-column: auto; }
+  .gh-program-list article { align-items: stretch; flex-direction: column; }
   .gh-actions,
   .gh-admin-documents > div,
   .gh-pagination,

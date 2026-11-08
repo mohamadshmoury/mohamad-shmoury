@@ -17,6 +17,7 @@ export interface GhawthaniDocument {
 
 export interface GhawthaniSubmission {
   id: string;
+  program_id: string;
   full_name: string;
   gender: GhawthaniGender;
   attended_day_1: boolean;
@@ -35,6 +36,7 @@ export interface GhawthaniSubmission {
 
 export interface GhawthaniTemplate {
   id: string;
+  program_id: string;
   version_number: number;
   template_type: GhawthaniDocumentType;
   original_filename: string;
@@ -65,6 +67,20 @@ export interface GhawthaniSummary {
   generation_failures: number;
 }
 
+export interface IjazahProgram {
+  id: string;
+  dawra_id: string | null;
+  slug: string;
+  title: string;
+  course_subject: string;
+  instructor_name: string;
+  introduction: string;
+  trust_statement: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
 async function functionError(error: any) {
   try {
     const response = error?.context as Response | undefined;
@@ -89,6 +105,7 @@ async function invoke<T>(functionName: string, body: Record<string, unknown>, ad
 }
 
 export async function submitGhawthani(input: {
+  program_slug?: string;
   full_name: string;
   gender: GhawthaniGender;
   attended_day_1: boolean;
@@ -98,6 +115,10 @@ export async function submitGhawthani(input: {
   idempotency_key: string;
 }) {
   return invoke<{ submission: GhawthaniSubmission; access_token: string; documents: GhawthaniDocument[] }>('ghawthani', { action: 'submit', ...input });
+}
+
+export async function getIjazahProgram(programSlug = 'ghawthani') {
+  return invoke<{ program: IjazahProgram }>('ghawthani', { action: 'program', program_slug: programSlug });
 }
 
 export async function getGhawthaniStatus(submissionId: string, accessToken: string) {
@@ -127,7 +148,7 @@ export const GH_ADMIN_TOKEN_KEY = 'shmoury_ghawthani_admin_token';
 export const GH_PARTICIPANT_SESSION_KEY = 'shmoury_ghawthani_participant';
 
 export const documentLabels: Record<GhawthaniDocumentType, string> = {
-  ijazah_male: 'إجازة الغوثاني',
-  ijazah_female: 'إجازة الغوثاني',
+  ijazah_male: 'الإجازة',
+  ijazah_female: 'الإجازة',
   participation_certificate: 'شهادة المشاركة والحضور',
 };

@@ -2,7 +2,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.50.0';
 import { personalizePdf, readBundledArabicFont, type NamePlacement } from './pdf.ts';
 import { sha256Hex } from './crypto.ts';
 import { expectedDocumentTypes, type DocumentType } from './eligibility.ts';
-const BUCKET = 'ghawthani-private';
+const BUCKET = 'ijazah-private';
 
 function placementFromTemplate(template: Record<string, unknown>): NamePlacement {
   return {
@@ -52,6 +52,7 @@ export async function issueSubmissionDocuments(client: SupabaseClient, submissio
       const { data: templates, error: templateError } = await client
         .from('ghawthani_template_versions')
         .select('*')
+        .eq('program_id', submission.program_id)
         .in('template_type', pendingTypes)
         .eq('is_active', true)
         .eq('is_validated', true);
@@ -63,7 +64,7 @@ export async function issueSubmissionDocuments(client: SupabaseClient, submissio
       const fontBytes = await readBundledArabicFont();
       for (const documentType of pendingTypes) {
         const template = byType.get(documentType)!;
-        const storagePath = `issued/${submission.id}/${documentType}.pdf`;
+        const storagePath = `issued/${submission.program_id}/${submission.id}/${documentType}.pdf`;
         const { data: issueRow, error: upsertError } = await client
           .from('ghawthani_issued_documents')
           .upsert({

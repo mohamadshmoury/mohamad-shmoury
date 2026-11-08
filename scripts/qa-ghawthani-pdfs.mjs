@@ -1,15 +1,11 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import fontkit from '@pdf-lib/fontkit';
-import reshaper from 'arabic-persian-reshaper';
-import bidiFactory from 'bidi-js';
 import { PDFDocument, rgb } from 'pdf-lib';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const outputDir = resolve(ROOT, 'tmp/ghawthani/qa');
 const fontBytes = await readFile(resolve(ROOT, 'supabase/functions/_shared/assets/NotoNaskhArabic-Regular.ttf'));
-const bidi = bidiFactory();
-const { ArabicShaper } = reshaper;
 
 const templates = [
   ['male', 'supabase/seed-assets/ghawthani/ijazah-male.pdf', { page_index: 0, page_width: 595.276, page_height: 851.7, name_x: 92, name_y: 452, name_width: 295, name_height: 34, font_size: 21, min_font_size: 11 }],
@@ -21,11 +17,6 @@ const names = [
   ['compound', 'عبد الله نور الدين محمد الغوثاني'],
   ['long', 'عبد الرحمن عبد الله محيي الدين بن محمد أحمد الغوثاني البقاعي'],
 ];
-
-function visual(text) {
-  const shaped = ArabicShaper.convertArabic(text);
-  return bidi.getReorderedString(shaped, bidi.getEmbeddingLevels(shaped, 'rtl'));
-}
 
 function split(name) {
   const words = name.split(/\s+/u);
@@ -41,11 +32,10 @@ function split(name) {
 }
 
 function layout(name, font, config) {
-  for (const lines of [[name], split(name)]) {
-    for (let size = config.font_size; size >= config.min_font_size; size -= 0.5) {
-      const output = lines.map(visual);
+  for (let size = config.font_size; size >= config.min_font_size; size -= 0.5) {
+    for (const lines of [[name], split(name)]) {
       const lineHeight = size * 1.15;
-      if (output.every((line) => font.widthOfTextAtSize(line, size) <= config.name_width) && output.length * lineHeight <= config.name_height) return { lines: output, size, lineHeight };
+      if (lines.every((line) => font.widthOfTextAtSize(line, size) <= config.name_width) && lines.length * lineHeight <= config.name_height) return { lines, size, lineHeight };
     }
   }
   throw new Error(`Name did not fit: ${name}`);

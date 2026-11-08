@@ -270,7 +270,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           onClick={() => setActiveTab('ghawthani')}
         >
           <Award size={16} aria-hidden />
-          إجازات وشهادات دورة الغوثاني
+          إجازات وشهادات
         </button>
         <button
           className={activeTab === 'profile' ? 'active' : ''}
@@ -377,6 +377,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           {activeTab === 'ghawthani' && (
             <GhawthaniManager
               adminToken={adminToken}
+              dawrat={dawrat}
               setNotice={setNotice}
               setError={setError}
             />

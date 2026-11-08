@@ -19,6 +19,7 @@ function requireBoolean(body: Record<string, unknown>, key: string) {
 function safeSubmission(row: Record<string, any>) {
   return {
     id: row.id,
+    program_id: row.program_id,
     full_name: row.full_name,
     gender: row.gender,
     attended_day_1: row.attended_day_1,
@@ -55,6 +56,16 @@ Deno.serve(async (request) => {
     const action = typeof body.action === 'string' ? body.action : 'submit';
     const client = serviceClient();
 
+    if (action === 'program') {
+      const slug = typeof body.program_slug === 'string' ? body.program_slug.trim().toLowerCase() : 'ghawthani';
+      const { data, error } = await client.from('ijazah_programs')
+        .select('id, slug, title, course_subject, instructor_name, introduction, trust_statement')
+        .eq('slug', slug).eq('is_active', true).maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('برنامج الإجازات والشهادات المطلوب غير متاح.');
+      return jsonResponse({ program: data });
+    }
+
     if (action === 'status') {
       const submission = await findAuthorizedSubmission(client, body.submission_id, body.access_token);
       return jsonResponse({
@@ -64,6 +75,12 @@ Deno.serve(async (request) => {
     }
 
     if (action !== 'submit') throw new Error('الإجراء غير مدعوم.');
+
+    const programSlug = typeof body.program_slug === 'string' ? body.program_slug.trim().toLowerCase() : 'ghawthani';
+    const { data: program, error: programError } = await client.from('ijazah_programs')
+      .select('id, slug').eq('slug', programSlug).eq('is_active', true).maybeSingle();
+    if (programError) throw programError;
+    if (!program) throw new Error('برنامج الإجازات والشهادات المطلوب غير متاح.');
 
     const fullName = cleanParticipantName(body.full_name);
     const gender = body.gender === 'male' || body.gender === 'female' ? body.gender : null;
@@ -93,6 +110,7 @@ Deno.serve(async (request) => {
       const { data: inserted, error: insertError } = await client
         .from('ghawthani_submissions')
         .insert({
+          program_id: program.id,
           full_name: fullName,
           gender,
           attended_day_1: day1,

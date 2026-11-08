@@ -1,16 +1,45 @@
--- Ghawthani Ijazah and participation certificate feature.
+-- Reusable Ijazah and participation-certificate feature. The Ghawthani
+-- course is seeded as the first program while templates and submissions are
+-- isolated per program.
 -- All participant and document access goes through Edge Functions using the
 -- service role. No direct anon/authenticated table or storage access is granted.
 
 create extension if not exists pgcrypto;
 create extension if not exists pg_trgm;
 
+create table if not exists public.ijazah_programs (
+  id uuid primary key default gen_random_uuid(),
+  dawra_id uuid,
+  slug text not null unique check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+  title text not null check (char_length(btrim(title)) between 3 and 180),
+  course_subject text not null check (char_length(btrim(course_subject)) between 3 and 300),
+  instructor_name text not null check (char_length(btrim(instructor_name)) between 3 and 160),
+  introduction text not null default '',
+  trust_statement text not null default 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة.',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.ijazah_programs (
+  id, slug, title, course_subject, instructor_name, introduction, trust_statement
+) values (
+  '9b6ecacd-fb7b-4c03-aee5-71a2ec4f5210',
+  'ghawthani',
+  'إجازة وشهادة دورة الغوثاني',
+  'قراءة وشرح كتاب «كيف تحفظ القرآن الكريم»',
+  'الشيخ د. يحيى الغوثاني',
+  'هذه الاستمارة خاصة بدورة قراءة وشرح كتاب «كيف تحفظ القرآن الكريم» للشيخ د. يحيى الغوثاني.',
+  'تُعتمد إجابات الحضور على الأمانة العلمية والثقة في النقل عند أهل القرآن والعلم.'
+) on conflict (slug) do nothing;
+
 create table if not exists public.ghawthani_template_versions (
   id uuid primary key default gen_random_uuid(),
+  program_id uuid not null references public.ijazah_programs(id) on delete cascade,
   version_number bigint generated always as identity,
   template_type text not null check (template_type in ('ijazah_male', 'ijazah_female', 'participation_certificate')),
   original_filename text not null,
-  storage_bucket text not null default 'ghawthani-private',
+  storage_bucket text not null default 'ijazah-private',
   storage_path text not null unique,
   file_sha256 text not null check (file_sha256 ~ '^[0-9a-f]{64}$'),
   page_count integer not null check (page_count > 0),
@@ -41,13 +70,14 @@ create table if not exists public.ghawthani_template_versions (
 );
 
 create unique index if not exists uq_ghawthani_active_template
-  on public.ghawthani_template_versions(template_type)
+  on public.ghawthani_template_versions(program_id, template_type)
   where is_active;
 create index if not exists idx_ghawthani_template_versions_type_created
-  on public.ghawthani_template_versions(template_type, created_at desc);
+  on public.ghawthani_template_versions(program_id, template_type, created_at desc);
 
 create table if not exists public.ghawthani_submissions (
   id uuid primary key default gen_random_uuid(),
+  program_id uuid not null references public.ijazah_programs(id) on delete restrict,
   full_name text not null check (char_length(btrim(full_name)) between 3 and 160),
   gender text not null check (gender in ('male', 'female')),
   attended_day_1 boolean not null,
@@ -76,11 +106,11 @@ create table if not exists public.ghawthani_submissions (
 );
 
 create index if not exists idx_ghawthani_submissions_submitted
-  on public.ghawthani_submissions(submitted_at desc);
+  on public.ghawthani_submissions(program_id, submitted_at desc);
 create index if not exists idx_ghawthani_submissions_name
   on public.ghawthani_submissions using gin (full_name gin_trgm_ops);
 create index if not exists idx_ghawthani_submissions_filters
-  on public.ghawthani_submissions(gender, eligibility, generation_status, attendance_count);
+  on public.ghawthani_submissions(program_id, gender, eligibility, generation_status, attendance_count);
 
 create table if not exists public.ghawthani_issued_documents (
   id uuid primary key default gen_random_uuid(),
@@ -88,7 +118,7 @@ create table if not exists public.ghawthani_issued_documents (
   document_type text not null check (document_type in ('ijazah_male', 'ijazah_female', 'participation_certificate')),
   template_version_id uuid not null references public.ghawthani_template_versions(id) on delete restrict,
   generation_status text not null default 'processing' check (generation_status in ('processing', 'issued', 'failed')),
-  storage_bucket text not null default 'ghawthani-private',
+  storage_bucket text not null default 'ijazah-private',
   storage_path text not null,
   file_sha256 text check (file_sha256 is null or file_sha256 ~ '^[0-9a-f]{64}$'),
   generation_error text,
@@ -120,6 +150,11 @@ create trigger ghawthani_submissions_touch
 before update on public.ghawthani_submissions
 for each row execute function public.ghawthani_touch_updated_at();
 
+drop trigger if exists ijazah_programs_touch on public.ijazah_programs;
+create trigger ijazah_programs_touch
+before update on public.ijazah_programs
+for each row execute function public.ghawthani_touch_updated_at();
+
 drop trigger if exists ghawthani_documents_touch on public.ghawthani_issued_documents;
 create trigger ghawthani_documents_touch
 before update on public.ghawthani_issued_documents
@@ -148,7 +183,10 @@ begin
 
   update public.ghawthani_template_versions
   set is_active = false, activated_at = null
-  where template_type = target.template_type and id <> target.id and is_active;
+  where program_id = target.program_id
+    and template_type = target.template_type
+    and id <> target.id
+    and is_active;
 
   update public.ghawthani_template_versions
   set is_active = true, activated_at = now()
@@ -165,18 +203,21 @@ grant execute on function public.ghawthani_activate_template(uuid) to service_ro
 alter table public.ghawthani_template_versions enable row level security;
 alter table public.ghawthani_submissions enable row level security;
 alter table public.ghawthani_issued_documents enable row level security;
+alter table public.ijazah_programs enable row level security;
 
 revoke all on table public.ghawthani_template_versions from anon, authenticated;
 revoke all on table public.ghawthani_submissions from anon, authenticated;
 revoke all on table public.ghawthani_issued_documents from anon, authenticated;
+revoke all on table public.ijazah_programs from anon, authenticated;
 grant all on table public.ghawthani_template_versions to service_role;
 grant all on table public.ghawthani_submissions to service_role;
 grant all on table public.ghawthani_issued_documents to service_role;
+grant all on table public.ijazah_programs to service_role;
 revoke all on sequence public.ghawthani_template_versions_version_number_seq from anon, authenticated;
 grant usage, select on sequence public.ghawthani_template_versions_version_number_seq to service_role;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('ghawthani-private', 'ghawthani-private', false, 10485760, array['application/pdf'])
+values ('ijazah-private', 'ijazah-private', false, 10485760, array['application/pdf'])
 on conflict (id) do update
 set public = false,
     file_size_limit = excluded.file_size_limit,
@@ -189,7 +230,9 @@ drop policy if exists "Public upload ghawthani documents" on storage.objects;
 drop policy if exists "Public update ghawthani documents" on storage.objects;
 drop policy if exists "Public delete ghawthani documents" on storage.objects;
 
+comment on table public.ijazah_programs is
+'Course-level configuration for the reusable Ijazah and certificate workflow.';
 comment on table public.ghawthani_submissions is
-'Private Ghawthani course attendance declarations. Eligibility is generated by PostgreSQL from the three attendance booleans.';
+'Private course attendance declarations, scoped by program. Eligibility is generated by PostgreSQL from the three attendance booleans.';
 comment on table public.ghawthani_issued_documents is
 'Idempotent document issuance records, unique per submission and document type, retaining the exact template version used.';

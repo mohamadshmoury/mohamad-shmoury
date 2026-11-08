@@ -1,12 +1,5 @@
 import { PDFDocument, PDFFont, rgb } from 'npm:pdf-lib@1.17.1';
 import fontkit from 'npm:@pdf-lib/fontkit@1.1.1';
-// @ts-ignore This small CommonJS package does not publish TypeScript declarations.
-import reshaper from 'npm:arabic-persian-reshaper@1.0.1';
-// @ts-ignore bidi-js does not publish TypeScript declarations.
-import bidiFactory from 'npm:bidi-js@1.0.3';
-
-const bidi = bidiFactory();
-const { ArabicShaper } = reshaper;
 
 export interface NamePlacement {
   page_index: number;
@@ -29,12 +22,6 @@ export function cleanParticipantName(value: unknown) {
   if (/\p{Cc}|[\r\n\t]/u.test(name)) throw new Error('يحتوي الاسم على محارف غير مسموحة.');
   if (!/[\p{L}\p{M}]/u.test(name)) throw new Error('يجب أن يتضمن الاسم حروفًا.');
   return name;
-}
-
-function visualArabic(text: string) {
-  const shaped = ArabicShaper.convertArabic(text);
-  const levels = bidi.getEmbeddingLevels(shaped, 'rtl');
-  return bidi.getReorderedString(shaped, levels);
 }
 
 function colorFromHex(hex: string) {
@@ -65,13 +52,15 @@ function splitForTwoLines(name: string) {
 
 function findLayout(name: string, font: PDFFont, config: NamePlacement) {
   const candidates = [[name], splitForTwoLines(name)];
-  for (const logicalLines of candidates) {
-    for (let size = config.font_size; size >= config.min_font_size; size -= 0.5) {
-      const visualLines = logicalLines.map(visualArabic);
+  for (let size = config.font_size; size >= config.min_font_size; size -= 0.5) {
+    for (const logicalLines of candidates) {
       const lineHeight = size * 1.15;
-      const fitsWidth = visualLines.every((line) => font.widthOfTextAtSize(line, size) <= config.name_width);
+      // pdf-lib delegates custom-font layout to fontkit, which performs Arabic
+      // contextual shaping. Supplying presentation-form/reversed text here
+      // would shape and reorder it a second time.
+      const fitsWidth = logicalLines.every((line) => font.widthOfTextAtSize(line, size) <= config.name_width);
       const fitsHeight = logicalLines.length * lineHeight <= config.name_height;
-      if (fitsWidth && fitsHeight) return { visualLines, size, lineHeight };
+      if (fitsWidth && fitsHeight) return { lines: logicalLines, size, lineHeight };
     }
   }
   throw new Error('الاسم طويل جدًا بالنسبة إلى مساحة القالب الحالية. يرجى ضبط موضع الاسم أو تقصيره دون الإخلال بصحته.');
@@ -101,10 +90,10 @@ export async function personalizePdf(
 
   const font = await document.embedFont(fontBytes, { subset: true });
   const layout = findLayout(name, font, config);
-  const totalHeight = layout.visualLines.length * layout.lineHeight;
+  const totalHeight = layout.lines.length * layout.lineHeight;
   const firstBaseline = config.name_y + (config.name_height + totalHeight) / 2 - layout.lineHeight * 0.82;
 
-  layout.visualLines.forEach((line, index) => {
+  layout.lines.forEach((line, index) => {
     const lineWidth = font.widthOfTextAtSize(line, layout.size);
     const x = config.alignment === 'left'
       ? config.name_x

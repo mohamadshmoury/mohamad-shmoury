@@ -9,6 +9,12 @@ const { chromium } = require('/Users/roaasoloh/.cache/codex-runtimes/codex-prima
   page.setDefaultTimeout(10000);
   const errors = [];
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.route('**/functions/v1/ghawthani', async (route) => {
+    const request = route.request();
+    const body = request.postDataJSON();
+    if (body?.action === 'program') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ program: { id: 'program-1', dawra_id: null, slug: 'ghawthani', title: 'إجازة وشهادة دورة الغوثاني', course_subject: 'قراءة وشرح كتاب «كيف تحفظ القرآن الكريم»', instructor_name: 'الشيخ د. يحيى الغوثاني', introduction: 'هذه الاستمارة خاصة بدورة قراءة وشرح كتاب «كيف تحفظ القرآن الكريم» للشيخ د. يحيى الغوثاني.', trust_statement: 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة.', is_active: true } }) });
+    return route.continue();
+  });
   await page.goto('http://127.0.0.1:5174/ejazaGhawthani', { waitUntil: 'networkidle' });
   await page.screenshot({ path: 'tmp/ghawthani/ui-desktop-form.png', fullPage: true });
 

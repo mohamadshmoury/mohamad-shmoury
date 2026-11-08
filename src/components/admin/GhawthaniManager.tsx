@@ -10,6 +10,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Settings2,
 } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -21,10 +22,13 @@ import {
   type GhawthaniSubmission,
   type GhawthaniSummary,
   type GhawthaniTemplate,
+  type IjazahProgram,
 } from '../../lib/ghawthaniService';
+import type { Dawra } from '../../types';
 
 interface Props {
   adminToken: string;
+  dawrat: Dawra[];
   setNotice: (value: string) => void;
   setError: (value: string) => void;
 }
@@ -63,8 +67,14 @@ function generationText(value: string) {
   return ({ pending: 'بانتظار التوليد', processing: 'قيد التوليد', completed: 'تم التوليد', failed: 'فشل التوليد', not_required: 'لا يلزم توليد' } as Record<string, string>)[value] || value;
 }
 
-export default function GhawthaniManager({ adminToken, setNotice, setError }: Props) {
-  const [section, setSection] = useState<'submissions' | 'templates'>('submissions');
+export default function GhawthaniManager({ adminToken, dawrat, setNotice, setError }: Props) {
+  const [section, setSection] = useState<'submissions' | 'templates' | 'programs'>('submissions');
+  const [programs, setPrograms] = useState<IjazahProgram[]>([]);
+  const [selectedProgramId, setSelectedProgramId] = useState('');
+  const [programForm, setProgramForm] = useState({
+    id: '', dawra_id: '', slug: '', title: '', course_subject: '', instructor_name: '', introduction: '',
+    trust_statement: 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة.', is_active: true,
+  });
   const [rows, setRows] = useState<GhawthaniSubmission[]>([]);
   const [summary, setSummary] = useState<GhawthaniSummary>({ submissions: 0, ijazah_eligible: 0, certificate_only: 0, generation_failures: 0 });
   const [filters, setFilters] = useState<Filters>({ search: '', gender: '', attendance_count: '', eligibility: '', generation_status: '' });
@@ -78,16 +88,31 @@ export default function GhawthaniManager({ adminToken, setNotice, setError }: Pr
   const [templateType, setTemplateType] = useState<GhawthaniDocumentType>('ijazah_male');
   const [templateFile, setTemplateFile] = useState<File | null>(null);
   const [placement, setPlacement] = useState(defaultPlacements.ijazah_male);
-  const [sampleName, setSampleName] = useState('عبد الله محمد الغوثاني');
+  const [sampleName, setSampleName] = useState('عبد الله محمد أحمد');
   const [sampleUrl, setSampleUrl] = useState('');
   const pageSize = 20;
 
+  const loadPrograms = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await ghawthaniAdmin<{ programs: IjazahProgram[] }>(adminToken, 'list_programs');
+      setPrograms(result.programs);
+      setSelectedProgramId((current) => current || result.programs[0]?.id || '');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر تحميل برامج الإجازات والشهادات.');
+    } finally {
+      setLoading(false);
+    }
+  }, [adminToken, setError]);
+
   const loadRows = useCallback(async () => {
+    if (!selectedProgramId) return;
     setLoading(true);
     setError('');
     try {
       const result = await ghawthaniAdmin<{ rows: GhawthaniSubmission[]; count: number; summary: GhawthaniSummary }>(adminToken, 'list_submissions', {
         page,
+        program_id: selectedProgramId,
         page_size: pageSize,
         search: appliedSearch,
         gender: filters.gender,
@@ -104,13 +129,14 @@ export default function GhawthaniManager({ adminToken, setNotice, setError }: Pr
     } finally {
       setLoading(false);
     }
-  }, [adminToken, appliedSearch, filters.attendance_count, filters.eligibility, filters.gender, filters.generation_status, page, selected, setError]);
+  }, [adminToken, appliedSearch, filters.attendance_count, filters.eligibility, filters.gender, filters.generation_status, page, selected, selectedProgramId, setError]);
 
   const loadTemplates = useCallback(async () => {
+    if (!selectedProgramId) return;
     setLoading(true);
     setError('');
     try {
-      const result = await ghawthaniAdmin<{ templates: GhawthaniTemplate[] }>(adminToken, 'list_templates');
+      const result = await ghawthaniAdmin<{ templates: GhawthaniTemplate[] }>(adminToken, 'list_templates', { program_id: selectedProgramId });
       setTemplates(result.templates);
       if (selectedTemplate) setSelectedTemplate(result.templates.find((item) => item.id === selectedTemplate.id) || null);
     } catch (caught) {
@@ -118,14 +144,16 @@ export default function GhawthaniManager({ adminToken, setNotice, setError }: Pr
     } finally {
       setLoading(false);
     }
-  }, [adminToken, selectedTemplate, setError]);
+  }, [adminToken, selectedProgramId, selectedTemplate, setError]);
+
+  useEffect(() => { void loadPrograms(); }, [loadPrograms]);
 
   useEffect(() => {
     if (section === 'submissions') void loadRows();
-    else void loadTemplates();
+    else if (section === 'templates') void loadTemplates();
     // selected entities are intentionally excluded to avoid refetch loops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section, page, appliedSearch, filters.gender, filters.attendance_count, filters.eligibility, filters.generation_status, adminToken]);
+  }, [section, page, appliedSearch, filters.gender, filters.attendance_count, filters.eligibility, filters.generation_status, adminToken, selectedProgramId]);
 
   const pages = Math.max(1, Math.ceil(count / pageSize));
   const activeTemplates = useMemo(() => templates.filter((template) => template.is_active), [templates]);
@@ -194,6 +222,7 @@ export default function GhawthaniManager({ adminToken, setNotice, setError }: Pr
     setError('');
     try {
       const result = await ghawthaniAdmin<{ template: GhawthaniTemplate }>(adminToken, 'upload_template', {
+        program_id: selectedProgramId,
         template_type: templateType,
         filename: templateFile.name,
         file_base64: await fileAsBase64(templateFile),
@@ -273,11 +302,66 @@ export default function GhawthaniManager({ adminToken, setNotice, setError }: Pr
     }
   }
 
+  function editProgram(program: IjazahProgram) {
+    setProgramForm({
+      id: program.id, dawra_id: program.dawra_id || '', slug: program.slug, title: program.title,
+      course_subject: program.course_subject, instructor_name: program.instructor_name,
+      introduction: program.introduction, trust_statement: program.trust_statement, is_active: program.is_active,
+    });
+    setSection('programs');
+  }
+
+  function chooseDawra(dawraId: string) {
+    const dawra = dawrat.find((item) => item.id === dawraId);
+    setProgramForm((current) => ({
+      ...current,
+      dawra_id: dawraId,
+      title: current.title || (dawra ? `إجازة وشهادة ${dawra.title}` : ''),
+      course_subject: current.course_subject || dawra?.title || '',
+      introduction: current.introduction || (dawra ? `هذه الاستمارة خاصة بدورة ${dawra.title}.` : ''),
+    }));
+  }
+
+  async function saveProgram(event: FormEvent) {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const result = await ghawthaniAdmin<{ program: IjazahProgram }>(adminToken, 'save_program', {
+        program_id: programForm.id || undefined,
+        ...programForm,
+      });
+      setNotice(programForm.id ? 'تم تحديث إعداد البرنامج.' : 'تم إنشاء برنامج الإجازات والشهادات للدورة المختارة.');
+      await loadPrograms();
+      setSelectedProgramId(result.program.id);
+      setProgramForm({ id: '', dawra_id: '', slug: '', title: '', course_subject: '', instructor_name: '', introduction: '', trust_statement: 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة.', is_active: true });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر حفظ البرنامج.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="gh-admin">
+      <section className="tool-panel gh-program-picker">
+        <div>
+          <span className="section-kicker">نطاق العمل</span>
+          <h2>إجازات وشهادات</h2>
+          <p>اختر الدورة أولًا؛ الطلبات والقوالب والإصدارات أدناه مستقلة لكل دورة.</p>
+        </div>
+        <label className="field">
+          <span>برنامج الدورة</span>
+          <select value={selectedProgramId} onChange={(event) => { setSelectedProgramId(event.target.value); setPage(1); setSelected(null); setSelectedTemplate(null); }}>
+            {programs.map((program) => <option key={program.id} value={program.id}>{program.title}{program.is_active ? '' : ' (متوقف)'}</option>)}
+          </select>
+        </label>
+        {selectedProgramId && <a className="ghost-action small" href={`/ejaza/${programs.find((program) => program.id === selectedProgramId)?.slug || ''}`} target="_blank" rel="noreferrer">فتح الاستمارة العامة</a>}
+      </section>
       <div className="gh-admin-tabs">
         <button className={section === 'submissions' ? 'active' : ''} onClick={() => setSection('submissions')} type="button">الطلبات والإصدارات</button>
         <button className={section === 'templates' ? 'active' : ''} onClick={() => setSection('templates')} type="button">إدارة القوالب</button>
+        <button className={section === 'programs' ? 'active' : ''} onClick={() => setSection('programs')} type="button"><Settings2 size={16} aria-hidden /> إعداد الدورات</button>
       </div>
 
       {section === 'submissions' && (
@@ -380,6 +464,31 @@ export default function GhawthaniManager({ adminToken, setNotice, setError }: Pr
             </section>
           )}
         </>
+      )}
+
+      {section === 'programs' && (
+        <div className="gh-programs-grid">
+          <section className="tool-panel">
+            <div className="section-heading compact"><span className="section-kicker">{programForm.id ? 'تعديل البرنامج' : 'برنامج جديد'}</span><h3>ربط الإجازات والشهادات بدورة</h3><p>لكل برنامج رابط عام وقوالب وطلبات مستقلة.</p></div>
+            <form className="gh-program-form" onSubmit={saveProgram}>
+              <label className="field full"><span>الدورة في المنصة</span><select value={programForm.dawra_id} onChange={(event) => chooseDawra(event.target.value)}><option value="">برنامج مستقل</option>{dawrat.map((dawra) => <option key={dawra.id} value={dawra.id}>{dawra.title}</option>)}</select></label>
+              <label className="field full"><span>عنوان قسم الإجازة والشهادة</span><input required value={programForm.title} onChange={(event) => setProgramForm({ ...programForm, title: event.target.value })} /></label>
+              <label className="field"><span>الرابط المختصر بالإنجليزية</span><input dir="ltr" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="course-2026" value={programForm.slug} onChange={(event) => setProgramForm({ ...programForm, slug: event.target.value.toLowerCase().replace(/\s+/g, '-') })} /></label>
+              <label className="field"><span>اسم المحاضر</span><input required value={programForm.instructor_name} onChange={(event) => setProgramForm({ ...programForm, instructor_name: event.target.value })} /></label>
+              <label className="field full"><span>موضوع الدورة أو الكتاب</span><input required value={programForm.course_subject} onChange={(event) => setProgramForm({ ...programForm, course_subject: event.target.value })} /></label>
+              <label className="field full"><span>مقدمة الاستمارة</span><textarea rows={3} value={programForm.introduction} onChange={(event) => setProgramForm({ ...programForm, introduction: event.target.value })} /></label>
+              <label className="field full"><span>بيان الأمانة والثقة</span><textarea rows={2} value={programForm.trust_statement} onChange={(event) => setProgramForm({ ...programForm, trust_statement: event.target.value })} /></label>
+              <label className="gh-acknowledgment full"><input type="checkbox" checked={programForm.is_active} onChange={(event) => setProgramForm({ ...programForm, is_active: event.target.checked })} /><span>الاستمارة العامة مفعّلة</span></label>
+              <div className="item-actions full"><button className="primary-action" disabled={loading} type="submit">{programForm.id ? 'حفظ التعديلات' : 'إنشاء البرنامج'}</button>{programForm.id && <button className="ghost-action" type="button" onClick={() => setProgramForm({ id: '', dawra_id: '', slug: '', title: '', course_subject: '', instructor_name: '', introduction: '', trust_statement: 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة.', is_active: true })}>إلغاء التعديل</button>}</div>
+            </form>
+          </section>
+          <section className="tool-panel">
+            <div className="section-heading compact"><span className="section-kicker">البرامج المحفوظة</span><h3>الدورات المرتبطة</h3></div>
+            <div className="gh-program-list">
+              {programs.map((program) => <article key={program.id}><div><strong>{program.title}</strong><small>{program.course_subject} · {program.instructor_name}</small><code dir="ltr">/ejaza/{program.slug}</code></div><div className="item-actions"><span className={`gh-status ${program.is_active ? 'completed' : 'not_required'}`}>{program.is_active ? 'مفعّل' : 'متوقف'}</span><button className="ghost-action small" type="button" onClick={() => editProgram(program)}>تعديل</button></div></article>)}
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );

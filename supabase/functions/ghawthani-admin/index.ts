@@ -5,10 +5,10 @@ import { constantTimeEqual, createAdminToken, sha256Hex, verifyAdminToken } from
 import { issueSubmissionDocuments, signedDocuments } from '../_shared/issuance.ts';
 import { cleanParticipantName, personalizePdf, readBundledArabicFont, type NamePlacement } from '../_shared/pdf.ts';
 
-const BUCKET = 'ghawthani-private';
+const BUCKET = 'ijazah-private';
 const TEMPLATE_TYPES = ['ijazah_male', 'ijazah_female', 'participation_certificate'] as const;
 const SUBMISSION_SELECT = `
-  id, full_name, gender, attended_day_1, attended_day_2, attended_day_3,
+  id, program_id, full_name, gender, attended_day_1, attended_day_2, attended_day_3,
   attendance_count, eligibility, generation_status, generation_error,
   generation_started_at, generation_completed_at, submitted_at, updated_at,
   documents:ghawthani_issued_documents(
@@ -58,8 +58,9 @@ function placement(body: Record<string, unknown>, pageWidth: number, pageHeight:
   return config;
 }
 
-function templateInsert(templateType: string, filename: string, storagePath: string, hash: string, pages: number, config: NamePlacement) {
+function templateInsert(programId: string, templateType: string, filename: string, storagePath: string, hash: string, pages: number, config: NamePlacement) {
   return {
+    program_id: programId,
     template_type: templateType,
     original_filename: filename,
     storage_bucket: BUCKET,
@@ -104,15 +105,20 @@ function requireAllowedOrigin(request: Request) {
   const origin = request.headers.get('origin');
   if (!origin) return;
   const allowed = configured.split(',').map((value) => value.trim()).filter(Boolean);
-  if (!allowed.includes(origin)) throw new Error('هذا النطاق غير مصرح له باستخدام إدارة الغوثاني.');
+  if (!allowed.includes(origin)) throw new Error('هذا النطاق غير مصرح له باستخدام إدارة الإجازات والشهادات.');
 }
 
-async function summary(client: SupabaseClient) {
+function requireProgramId(value: unknown) {
+  if (typeof value !== 'string' || !/^[0-9a-f-]{36}$/i.test(value)) throw new Error('يرجى اختيار برنامج الإجازات والشهادات.');
+  return value;
+}
+
+async function summary(client: SupabaseClient, programId: string) {
   const [all, ijazah, certificate, failures] = await Promise.all([
-    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }),
-    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('eligibility', 'ijazah_and_certificate'),
-    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('eligibility', 'certificate_only'),
-    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('generation_status', 'failed'),
+    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId),
+    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).eq('eligibility', 'ijazah_and_certificate'),
+    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).eq('eligibility', 'certificate_only'),
+    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).eq('generation_status', 'failed'),
   ]);
   const error = [all, ijazah, certificate, failures].find((result) => result.error)?.error;
   if (error) throw error;
@@ -144,12 +150,47 @@ Deno.serve(async (request) => {
     await requireAdmin(request);
     const client = serviceClient();
 
-    if (action === 'summary') return jsonResponse({ summary: await summary(client) });
+    if (action === 'list_programs') {
+      const { data, error } = await client.from('ijazah_programs').select('*').order('created_at');
+      if (error) throw error;
+      return jsonResponse({ programs: data || [] });
+    }
+
+    if (action === 'save_program') {
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      const courseSubject = typeof body.course_subject === 'string' ? body.course_subject.trim() : '';
+      const instructorName = typeof body.instructor_name === 'string' ? body.instructor_name.trim() : '';
+      const slug = typeof body.slug === 'string' ? body.slug.trim().toLowerCase() : '';
+      if (title.length < 3 || courseSubject.length < 3 || instructorName.length < 3) throw new Error('أكمل عنوان البرنامج وموضوع الدورة واسم المحاضر.');
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error('الرابط المختصر يقبل أحرفًا إنجليزية صغيرة وأرقامًا وشرطات فقط.');
+      const values = {
+        dawra_id: typeof body.dawra_id === 'string' && body.dawra_id ? body.dawra_id : null,
+        slug,
+        title,
+        course_subject: courseSubject,
+        instructor_name: instructorName,
+        introduction: typeof body.introduction === 'string' ? body.introduction.trim() : '',
+        trust_statement: typeof body.trust_statement === 'string' && body.trust_statement.trim()
+          ? body.trust_statement.trim()
+          : 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة.',
+        is_active: body.is_active !== false,
+      };
+      const programId = typeof body.program_id === 'string' ? body.program_id : '';
+      const query = programId
+        ? client.from('ijazah_programs').update(values).eq('id', programId)
+        : client.from('ijazah_programs').insert(values);
+      const { data, error } = await query.select('*').single();
+      if (error) throw error;
+      return jsonResponse({ program: data });
+    }
+
+    if (action === 'summary') return jsonResponse({ summary: await summary(client, requireProgramId(body.program_id)) });
 
     if (action === 'list_submissions') {
+      const programId = requireProgramId(body.program_id);
       const page = Math.max(1, Math.trunc(Number(body.page) || 1));
       const pageSize = Math.min(100, Math.max(10, Math.trunc(Number(body.page_size) || 20)));
-      let query = client.from('ghawthani_submissions').select(SUBMISSION_SELECT, { count: 'exact' });
+      let query = client.from('ghawthani_submissions').select(SUBMISSION_SELECT, { count: 'exact' }).eq('program_id', programId);
       if (typeof body.search === 'string' && body.search.trim()) query = query.ilike('full_name', `%${body.search.trim().replace(/[%_,]/g, '')}%`);
       if (body.gender === 'male' || body.gender === 'female') query = query.eq('gender', body.gender);
       if (['none', 'certificate_only', 'ijazah_and_certificate'].includes(String(body.eligibility))) query = query.eq('eligibility', body.eligibility);
@@ -158,7 +199,7 @@ Deno.serve(async (request) => {
       const from = (page - 1) * pageSize;
       const { data, count, error } = await query.order('submitted_at', { ascending: false }).range(from, from + pageSize - 1);
       if (error) throw error;
-      return jsonResponse({ rows: data || [], count: count || 0, page, page_size: pageSize, summary: await summary(client) });
+      return jsonResponse({ rows: data || [], count: count || 0, page, page_size: pageSize, summary: await summary(client, programId) });
     }
 
     if (action === 'submission_details') {
@@ -189,12 +230,14 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'list_templates') {
-      const { data, error } = await client.from('ghawthani_template_versions').select('*').order('template_type').order('created_at', { ascending: false });
+      const programId = requireProgramId(body.program_id);
+      const { data, error } = await client.from('ghawthani_template_versions').select('*').eq('program_id', programId).order('template_type').order('created_at', { ascending: false });
       if (error) throw error;
       return jsonResponse({ templates: await Promise.all((data || []).map((row) => signedTemplate(client, row))) });
     }
 
     if (action === 'upload_template') {
+      const programId = requireProgramId(body.program_id);
       const templateType = TEMPLATE_TYPES.includes(body.template_type as any) ? String(body.template_type) : null;
       if (!templateType) throw new Error('نوع القالب غير صالح.');
       const filename = typeof body.filename === 'string' && body.filename.trim() ? body.filename.trim().slice(0, 180) : 'template.pdf';
@@ -213,11 +256,11 @@ Deno.serve(async (request) => {
       const size = selectedPage.getSize();
       const config = placement(body, size.width, size.height, pages.length);
       const id = crypto.randomUUID();
-      const storagePath = `templates/${templateType}/${id}.pdf`;
+      const storagePath = `templates/${programId}/${templateType}/${id}.pdf`;
       const { error: uploadError } = await client.storage.from(BUCKET).upload(storagePath, bytes, { contentType: 'application/pdf', cacheControl: '0', upsert: false });
       if (uploadError) throw uploadError;
       const { data: inserted, error: insertError } = await client.from('ghawthani_template_versions')
-        .insert(templateInsert(templateType, filename, storagePath, await sha256Hex(bytes), pages.length, config))
+        .insert(templateInsert(programId, templateType, filename, storagePath, await sha256Hex(bytes), pages.length, config))
         .select('*').single();
       if (insertError) {
         await client.storage.from(BUCKET).remove([storagePath]);
@@ -245,11 +288,11 @@ Deno.serve(async (request) => {
       if (downloadError || !blob) throw downloadError || new Error('تعذر قراءة القالب الحالي.');
       const bytes = new Uint8Array(await blob.arrayBuffer());
       const newId = crypto.randomUUID();
-      const newPath = `templates/${current.template_type}/${newId}.pdf`;
+      const newPath = `templates/${current.program_id}/${current.template_type}/${newId}.pdf`;
       const { error: uploadError } = await client.storage.from(BUCKET).upload(newPath, bytes, { contentType: 'application/pdf', cacheControl: '0', upsert: false });
       if (uploadError) throw uploadError;
       const { data: inserted, error: insertError } = await client.from('ghawthani_template_versions').insert(templateInsert(
-        current.template_type, current.original_filename, newPath, current.file_sha256, current.page_count, config,
+        current.program_id, current.template_type, current.original_filename, newPath, current.file_sha256, current.page_count, config,
       )).select('*').single();
       if (insertError) {
         await client.storage.from(BUCKET).remove([newPath]);
@@ -259,7 +302,7 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'generate_sample') {
-      const sampleName = cleanParticipantName(body.sample_name || 'عبد الله محمد الغوثاني');
+      const sampleName = cleanParticipantName(body.sample_name || 'عبد الله محمد أحمد');
       const { data: template, error } = await client.from('ghawthani_template_versions').select('*').eq('id', body.template_id).single();
       if (error) throw error;
       const { data: blob, error: downloadError } = await client.storage.from(template.storage_bucket).download(template.storage_path);

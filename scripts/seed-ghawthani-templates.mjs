@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PDFDocument } from 'pdf-lib';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const BUCKET = 'ghawthani-private';
+const BUCKET = 'ijazah-private';
 const definitions = [
   {
     type: 'ijazah_male',
@@ -29,6 +29,9 @@ async function main() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) throw new Error('Set SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY before seeding.');
   const client = createClient(url, serviceKey, { auth: { persistSession: false } });
+  const { data: program, error: programError } = await client.from('ijazah_programs')
+    .select('id').eq('slug', 'ghawthani').single();
+  if (programError) throw programError;
 
   for (const definition of definitions) {
     const bytes = await readFile(resolve(ROOT, definition.file));
@@ -40,6 +43,7 @@ async function main() {
     const { data: existing, error: existingError } = await client
       .from('ghawthani_template_versions')
       .select('*')
+      .eq('program_id', program.id)
       .eq('template_type', definition.type)
       .eq('file_sha256', hash)
       .maybeSingle();
@@ -48,12 +52,13 @@ async function main() {
     let template = existing;
     if (!template) {
       const id = crypto.randomUUID();
-      const storagePath = `templates/${definition.type}/${id}.pdf`;
+      const storagePath = `templates/${program.id}/${definition.type}/${id}.pdf`;
       const { error: uploadError } = await client.storage.from(BUCKET).upload(storagePath, bytes, {
         contentType: 'application/pdf', cacheControl: '0', upsert: false,
       });
       if (uploadError) throw uploadError;
       const { data: inserted, error: insertError } = await client.from('ghawthani_template_versions').insert({
+        program_id: program.id,
         template_type: definition.type,
         original_filename: basename(definition.file),
         storage_bucket: BUCKET,
