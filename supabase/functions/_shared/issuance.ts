@@ -16,6 +16,7 @@ function placementFromTemplate(template: Record<string, unknown>): NamePlacement
     font_size: Number(template.font_size),
     min_font_size: Number(template.min_font_size),
     font_color: String(template.font_color),
+    font_family: String(template.font_family || 'noto_naskh') as NamePlacement['font_family'],
     alignment: template.alignment as NamePlacement['alignment'],
   };
 }
@@ -61,9 +62,9 @@ export async function issueSubmissionDocuments(client: SupabaseClient, submissio
       const missing = pendingTypes.filter((type) => !byType.has(type));
       if (missing.length) throw new Error(`القالب المطلوب غير متوفر أو غير مفعّل: ${missing.join(', ')}`);
 
-      const fontBytes = await readBundledArabicFont();
       for (const documentType of pendingTypes) {
         const template = byType.get(documentType)!;
+        const fontBytes = await readBundledArabicFont(template.font_family || 'noto_naskh');
         const storagePath = `issued/${submission.program_id}/${submission.id}/${documentType}.pdf`;
         const { data: issueRow, error: upsertError } = await client
           .from('ghawthani_issued_documents')

@@ -63,7 +63,9 @@ The second migration (`202611080002_generalize_ijazah_programs.sql`) is safe for
 
 ### Template workflow
 
-Open **إجازات وشهادات** in the existing dashboard. Under **إعداد الدورات**, create or select the course program and its public slug. The program selector scopes the requests, statistics, and templates. Under **إدارة القوالب**, upload each PDF, adjust the name box in PDF points, generate a sample with an Arabic test name, inspect the full-size PDF, approve the sample, then activate that version. Editing an active template creates a new version so earlier issued documents retain their original template reference.
+Open **إجازات وشهادات** in the existing dashboard. Under **إعداد الدورات**, create or select the course program and its public slug. The program selector scopes the requests, statistics, and templates. Under **إدارة القوالب**, upload each PDF, adjust the name box in PDF points, choose an Arabic font (Noto Naskh, Amiri, or the calligraphic Aref Ruqaa), generate a sample with an Arabic test name, inspect the full-size PDF, approve the sample, then activate that version. Editing an active template creates a new version so earlier issued documents retain their original template reference.
+
+The admin can deactivate all current templates before activating replacements uploaded through the dashboard. An unused template version can be permanently deleted; a version referenced by an issued document is retained for audit integrity and can only be deactivated. A request can also be deleted from its details panel, which removes its database row, issued-document records, and private PDF files after confirmation.
 
 ### Security boundary
 

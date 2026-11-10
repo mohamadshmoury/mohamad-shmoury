@@ -4,6 +4,7 @@ export type GhawthaniGender = 'male' | 'female';
 export type GhawthaniEligibility = 'none' | 'certificate_only' | 'ijazah_and_certificate';
 export type GhawthaniGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'not_required';
 export type GhawthaniDocumentType = 'ijazah_male' | 'ijazah_female' | 'participation_certificate';
+export type GhawthaniFontFamily = 'noto_naskh' | 'amiri' | 'aref_ruqaa';
 
 export interface GhawthaniDocument {
   id: string;
@@ -51,6 +52,7 @@ export interface GhawthaniTemplate {
   font_size: number;
   min_font_size: number;
   font_color: string;
+  font_family: GhawthaniFontFamily;
   alignment: 'center' | 'right' | 'left';
   is_validated: boolean;
   is_active: boolean;

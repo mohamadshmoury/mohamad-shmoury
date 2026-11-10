@@ -3,7 +3,7 @@ import { PDFDocument } from 'npm:pdf-lib@1.17.1';
 import { corsHeaders, errorResponse, jsonResponse } from '../_shared/cors.ts';
 import { constantTimeEqual, createAdminToken, sha256Hex, verifyAdminToken } from '../_shared/crypto.ts';
 import { issueSubmissionDocuments, signedDocuments } from '../_shared/issuance.ts';
-import { cleanParticipantName, personalizePdf, readBundledArabicFont, type NamePlacement } from '../_shared/pdf.ts';
+import { ARABIC_FONT_FAMILIES, cleanParticipantName, personalizePdf, readBundledArabicFont, type ArabicFontFamily, type NamePlacement } from '../_shared/pdf.ts';
 
 const BUCKET = 'ijazah-private';
 const TEMPLATE_TYPES = ['ijazah_male', 'ijazah_female', 'participation_certificate'] as const;
@@ -42,6 +42,9 @@ function placement(body: Record<string, unknown>, pageWidth: number, pageHeight:
     font_size: asNumber(body.font_size, 'حجم الخط'),
     min_font_size: asNumber(body.min_font_size, 'الحد الأدنى للخط'),
     font_color: typeof body.font_color === 'string' ? body.font_color : '#171717',
+    font_family: ARABIC_FONT_FAMILIES.includes(body.font_family as ArabicFontFamily)
+      ? body.font_family as ArabicFontFamily
+      : 'noto_naskh',
     alignment: body.alignment === 'left' || body.alignment === 'right' ? body.alignment : 'center',
   };
   if (config.page_index < 0 || config.page_index >= pageCount) throw new Error('رقم صفحة الاسم خارج نطاق القالب.');
@@ -215,6 +218,32 @@ Deno.serve(async (request) => {
       return jsonResponse({ submission: data });
     }
 
+    if (action === 'delete_submission') {
+      const { data: documents, error: documentsError } = await client
+        .from('ghawthani_issued_documents')
+        .select('storage_bucket, storage_path')
+        .eq('submission_id', body.submission_id);
+      if (documentsError) throw documentsError;
+      const { data: deleted, error: deleteError } = await client
+        .from('ghawthani_submissions')
+        .delete()
+        .eq('id', body.submission_id)
+        .select('id')
+        .single();
+      if (deleteError) throw deleteError;
+      const pathsByBucket = new Map<string, string[]>();
+      for (const document of documents || []) {
+        const paths = pathsByBucket.get(document.storage_bucket) || [];
+        paths.push(document.storage_path);
+        pathsByBucket.set(document.storage_bucket, paths);
+      }
+      for (const [bucket, paths] of pathsByBucket) {
+        const { error: cleanupError } = await client.storage.from(bucket).remove(paths);
+        if (cleanupError) console.error('Failed to remove deleted submission files', cleanupError);
+      }
+      return jsonResponse({ deleted_submission_id: deleted.id });
+    }
+
     if (action === 'retry') {
       const { data: submission, error } = await client.from('ghawthani_submissions').select('*').eq('id', body.submission_id).single();
       if (error) throw error;
@@ -241,6 +270,41 @@ Deno.serve(async (request) => {
       const { data, error } = await client.from('ghawthani_template_versions').select('*').eq('program_id', programId).order('template_type').order('created_at', { ascending: false });
       if (error) throw error;
       return jsonResponse({ templates: await Promise.all((data || []).map((row) => signedTemplate(client, row))) });
+    }
+
+    if (action === 'deactivate_templates') {
+      const programId = requireProgramId(body.program_id);
+      const { data, error } = await client
+        .from('ghawthani_template_versions')
+        .update({ is_active: false, activated_at: null })
+        .eq('program_id', programId)
+        .eq('is_active', true)
+        .select('id');
+      if (error) throw error;
+      return jsonResponse({ deactivated_count: data?.length || 0 });
+    }
+
+    if (action === 'delete_template') {
+      const { data: template, error: templateError } = await client
+        .from('ghawthani_template_versions')
+        .select('*')
+        .eq('id', body.template_id)
+        .single();
+      if (templateError) throw templateError;
+      const { count: issuedCount, error: issuedError } = await client
+        .from('ghawthani_issued_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('template_version_id', template.id);
+      if (issuedError) throw issuedError;
+      if (issuedCount) throw new Error('لا يمكن حذف هذه النسخة لأن مستندات صادرة تعتمد عليها. يمكنك إلغاء تفعيلها بدلًا من ذلك.');
+      const { error: deleteError } = await client.from('ghawthani_template_versions').delete().eq('id', template.id);
+      if (deleteError) throw deleteError;
+      const paths = [template.storage_path, template.sample_storage_path].filter((value): value is string => Boolean(value));
+      if (paths.length) {
+        const { error: cleanupError } = await client.storage.from(template.storage_bucket).remove(paths);
+        if (cleanupError) console.error('Failed to remove deleted template files', cleanupError);
+      }
+      return jsonResponse({ deleted_template_id: template.id });
     }
 
     if (action === 'upload_template') {
@@ -314,7 +378,12 @@ Deno.serve(async (request) => {
       if (error) throw error;
       const { data: blob, error: downloadError } = await client.storage.from(template.storage_bucket).download(template.storage_path);
       if (downloadError || !blob) throw downloadError || new Error('تعذر تنزيل القالب.');
-      const output = await personalizePdf(new Uint8Array(await blob.arrayBuffer()), await readBundledArabicFont(), sampleName, template as NamePlacement);
+      const output = await personalizePdf(
+        new Uint8Array(await blob.arrayBuffer()),
+        await readBundledArabicFont(template.font_family || 'noto_naskh'),
+        sampleName,
+        template as NamePlacement,
+      );
       const samplePath = `samples/${template.id}/${crypto.randomUUID()}.pdf`;
       const { error: uploadError } = await client.storage.from(BUCKET).upload(samplePath, output, { contentType: 'application/pdf', cacheControl: '0', upsert: false });
       if (uploadError) throw uploadError;

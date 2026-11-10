@@ -8,9 +8,11 @@ import {
   FileCog,
   FileUp,
   Loader2,
+  PowerOff,
   RefreshCw,
   Search,
   Settings2,
+  Trash2,
 } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -19,6 +21,7 @@ import {
   ghawthaniAdmin,
   type GhawthaniDocument,
   type GhawthaniDocumentType,
+  type GhawthaniFontFamily,
   type GhawthaniSubmission,
   type GhawthaniSummary,
   type GhawthaniTemplate,
@@ -48,10 +51,16 @@ const templateLabels: Record<GhawthaniDocumentType, string> = {
   participation_certificate: 'شهادة المشاركة والحضور',
 };
 
-const defaultPlacements: Record<GhawthaniDocumentType, Pick<GhawthaniTemplate, 'page_index' | 'name_x' | 'name_y' | 'name_width' | 'name_height' | 'font_size' | 'min_font_size' | 'font_color' | 'alignment'>> = {
-  ijazah_male: { page_index: 0, name_x: 92, name_y: 452, name_width: 295, name_height: 34, font_size: 21, min_font_size: 11, font_color: '#171717', alignment: 'center' },
-  ijazah_female: { page_index: 0, name_x: 92, name_y: 452, name_width: 295, name_height: 34, font_size: 21, min_font_size: 11, font_color: '#171717', alignment: 'center' },
-  participation_certificate: { page_index: 0, name_x: 145, name_y: 382, name_width: 552, name_height: 50, font_size: 28, min_font_size: 14, font_color: '#171717', alignment: 'center' },
+const fontFamilyLabels: Record<GhawthaniFontFamily, string> = {
+  noto_naskh: 'Noto Naskh Arabic — نسخ واضح',
+  amiri: 'Amiri — نسخ كلاسيكي',
+  aref_ruqaa: 'Aref Ruqaa — خط الرقعة',
+};
+
+const defaultPlacements: Record<GhawthaniDocumentType, Pick<GhawthaniTemplate, 'page_index' | 'name_x' | 'name_y' | 'name_width' | 'name_height' | 'font_size' | 'min_font_size' | 'font_color' | 'font_family' | 'alignment'>> = {
+  ijazah_male: { page_index: 0, name_x: 92, name_y: 452, name_width: 295, name_height: 34, font_size: 21, min_font_size: 11, font_color: '#171717', font_family: 'amiri', alignment: 'center' },
+  ijazah_female: { page_index: 0, name_x: 92, name_y: 452, name_width: 295, name_height: 34, font_size: 21, min_font_size: 11, font_color: '#171717', font_family: 'amiri', alignment: 'center' },
+  participation_certificate: { page_index: 0, name_x: 145, name_y: 382, name_width: 552, name_height: 50, font_size: 28, min_font_size: 14, font_color: '#171717', font_family: 'aref_ruqaa', alignment: 'center' },
 };
 
 function attendanceText(row: GhawthaniSubmission) {
@@ -210,7 +219,8 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
     setPlacement({
       page_index: Number(template.page_index), name_x: Number(template.name_x), name_y: Number(template.name_y),
       name_width: Number(template.name_width), name_height: Number(template.name_height), font_size: Number(template.font_size),
-      min_font_size: Number(template.min_font_size), font_color: template.font_color, alignment: template.alignment,
+      min_font_size: Number(template.min_font_size), font_color: template.font_color,
+      font_family: template.font_family || 'noto_naskh', alignment: template.alignment,
     });
     setSampleUrl('');
   }
@@ -307,6 +317,54 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       await loadTemplates();
     } catch (caught) {
       reportAdminError(caught, 'تعذر تفعيل القالب.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deactivateAllTemplates() {
+    if (!activeTemplates.length || !window.confirm('هل تريد إلغاء تفعيل جميع القوالب الحالية؟ لن يؤثر ذلك في المستندات الصادرة سابقًا.')) return;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await ghawthaniAdmin<{ deactivated_count: number }>(adminToken, 'deactivate_templates', { program_id: selectedProgramId });
+      setNotice(`تم إلغاء تفعيل ${result.deactivated_count} قالب. يمكنك الآن رفع قوالبك وفحصها وتفعيلها.`);
+      await loadTemplates();
+    } catch (caught) {
+      reportAdminError(caught, 'تعذر إلغاء تفعيل القوالب.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteSelectedTemplate() {
+    if (!selectedTemplate || !window.confirm(`حذف ${templateLabels[selectedTemplate.template_type]} - النسخة ${selectedTemplate.version_number}؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+    setLoading(true);
+    setError('');
+    try {
+      await ghawthaniAdmin(adminToken, 'delete_template', { template_id: selectedTemplate.id });
+      setSelectedTemplate(null);
+      setSampleUrl('');
+      setNotice('تم حذف نسخة القالب وملفاتها.');
+      await loadTemplates();
+    } catch (caught) {
+      reportAdminError(caught, 'تعذر حذف نسخة القالب.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteSelectedSubmission() {
+    if (!selected || !window.confirm(`حذف طلب ${selected.full_name} وجميع المستندات الصادرة له؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+    setLoading(true);
+    setError('');
+    try {
+      await ghawthaniAdmin(adminToken, 'delete_submission', { submission_id: selected.id });
+      setSelected(null);
+      setNotice('تم حذف الطلب ومستنداته.');
+      await loadRows();
+    } catch (caught) {
+      reportAdminError(caught, 'تعذر حذف الطلب.');
     } finally {
       setLoading(false);
     }
@@ -427,7 +485,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
                 ))}
                 {!(selected.documents || []).length && <p>لم يصدر أي مستند لهذا الطلب.</p>}
               </div>
-              <div className="item-actions"><button className="secondary-action" disabled={loading || !['failed', 'pending'].includes(selected.generation_status)} onClick={() => retry(selected)} type="button"><RefreshCw size={17} aria-hidden /> إعادة محاولة التوليد</button><button className="ghost-action" onClick={() => setSelected(null)} type="button">إغلاق التفاصيل</button></div>
+              <div className="item-actions"><button className="secondary-action" disabled={loading || !['failed', 'pending'].includes(selected.generation_status)} onClick={() => retry(selected)} type="button"><RefreshCw size={17} aria-hidden /> إعادة محاولة التوليد</button><button className="ghost-action" onClick={() => setSelected(null)} type="button">إغلاق التفاصيل</button><button className="danger-action" disabled={loading} onClick={deleteSelectedSubmission} type="button"><Trash2 size={17} aria-hidden /> حذف الطلب</button></div>
             </section>
           )}
         </>
@@ -435,6 +493,10 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
 
       {section === 'templates' && (
         <>
+          <div className="gh-template-toolbar">
+            <p>القوالب المفعّلة فقط هي التي تستخدم للطلبات الجديدة. إلغاء التفعيل لا يحذف الإصدارات السابقة.</p>
+            <button className="danger-action" disabled={loading || !activeTemplates.length} onClick={deactivateAllTemplates} type="button"><PowerOff size={17} aria-hidden /> إلغاء تفعيل القوالب الحالية</button>
+          </div>
           <div className="gh-template-status">
             {Object.keys(templateLabels).map((type) => {
               const active = activeTemplates.find((template) => template.template_type === type);
@@ -456,7 +518,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
             <section className="tool-panel">
               <div className="section-heading compact"><span className="section-kicker">النسخ المحفوظة</span><h3>القوالب والإصدارات</h3></div>
               <div className="gh-template-list">
-                {templates.map((template) => <button type="button" key={template.id} className={`${selectedTemplate?.id === template.id ? 'selected' : ''}`} onClick={() => chooseTemplate(template)}><FileCog size={18} aria-hidden /><span><strong>{templateLabels[template.template_type]} - النسخة {template.version_number}</strong><small>{template.is_active ? 'مفعّلة' : template.is_validated ? 'مفحوصة وغير مفعّلة' : 'بانتظار الفحص'} · {new Date(template.created_at).toLocaleDateString('ar-LB')}</small></span></button>)}
+                {templates.map((template) => <button type="button" key={template.id} className={`${selectedTemplate?.id === template.id ? 'selected' : ''}`} onClick={() => chooseTemplate(template)}><FileCog size={18} aria-hidden /><span><strong>{templateLabels[template.template_type]} - النسخة {template.version_number}</strong><small>{template.is_active ? 'مفعّلة' : template.is_validated ? 'مفحوصة وغير مفعّلة' : 'بانتظار الفحص'} · {fontFamilyLabels[template.font_family || 'noto_naskh']} · {new Date(template.created_at).toLocaleDateString('ar-LB')}</small></span></button>)}
                 {!templates.length && !loading && <p>لا توجد قوالب. ارفع القوالب الأصلية الثلاثة للبدء.</p>}
               </div>
             </section>
@@ -471,6 +533,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
               <div className="gh-sample-controls"><label className="field"><span>اسم عربي للاختبار</span><input value={sampleName} onChange={(event) => setSampleName(event.target.value)} /></label><button className="primary-action" onClick={generateSample} disabled={loading} type="button">إنشاء عينة</button></div>
               {sampleUrl && <div className="gh-sample-preview"><iframe title="عينة الاسم على القالب" src={sampleUrl} /><div className="item-actions"><a className="secondary-action" href={sampleUrl} target="_blank" rel="noreferrer"><Eye size={17} aria-hidden /> فحص العينة بالحجم الكامل</a><button className="primary-action" onClick={validateTemplate} disabled={loading || selectedTemplate.is_validated} type="button"><CheckCircle2 size={17} aria-hidden /> اعتماد نتيجة العينة</button></div></div>}
               <div className="gh-activation"><span>{selectedTemplate.is_active ? 'هذه النسخة مفعّلة حاليًا.' : selectedTemplate.is_validated ? 'العينة معتمدة والنسخة جاهزة للتفعيل.' : 'يجب إنشاء عينة وفحصها واعتمادها قبل التفعيل.'}</span><button className="primary-action" onClick={activateTemplate} disabled={loading || selectedTemplate.is_active || !selectedTemplate.is_validated} type="button">تفعيل هذه النسخة</button></div>
+              <div className="gh-danger-zone"><span><strong>حذف نسخة القالب</strong><small>يمكن حذفها فقط إذا لم تكن مرتبطة بمستندات صادرة.</small></span><button className="danger-action" disabled={loading} onClick={deleteSelectedTemplate} type="button"><Trash2 size={17} aria-hidden /> حذف النسخة</button></div>
             </section>
           )}
         </>
@@ -508,5 +571,5 @@ function PlacementFields({ placement, setPlacement }: { placement: typeof defaul
   const numberField = (key: keyof typeof placement, label: string, step = '0.5') => (
     <label className="field"><span>{label}</span><input type="number" step={step} value={placement[key]} onChange={(event) => setPlacement({ ...placement, [key]: Number(event.target.value) })} /></label>
   );
-  return <div className="gh-placement-grid">{numberField('page_index', 'رقم الصفحة', '1')}{numberField('name_x', 'X')}{numberField('name_y', 'Y')}{numberField('name_width', 'عرض المنطقة')}{numberField('name_height', 'ارتفاع المنطقة')}{numberField('font_size', 'حجم الخط')}{numberField('min_font_size', 'أدنى حجم')}<label className="field"><span>لون الخط</span><input type="color" value={placement.font_color} onChange={(event) => setPlacement({ ...placement, font_color: event.target.value })} /></label><label className="field"><span>المحاذاة</span><select value={placement.alignment} onChange={(event) => setPlacement({ ...placement, alignment: event.target.value as 'center' | 'right' | 'left' })}><option value="center">وسط</option><option value="right">يمين</option><option value="left">يسار</option></select></label></div>;
+  return <div className="gh-placement-grid">{numberField('page_index', 'رقم الصفحة', '1')}{numberField('name_x', 'X')}{numberField('name_y', 'Y')}{numberField('name_width', 'عرض المنطقة')}{numberField('name_height', 'ارتفاع المنطقة')}{numberField('font_size', 'حجم الخط')}{numberField('min_font_size', 'أدنى حجم')}<label className="field"><span>نوع الخط العربي</span><select value={placement.font_family} onChange={(event) => setPlacement({ ...placement, font_family: event.target.value as GhawthaniFontFamily })}>{Object.entries(fontFamilyLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span>لون الخط</span><input type="color" value={placement.font_color} onChange={(event) => setPlacement({ ...placement, font_color: event.target.value })} /></label><label className="field"><span>المحاذاة</span><select value={placement.alignment} onChange={(event) => setPlacement({ ...placement, alignment: event.target.value as 'center' | 'right' | 'left' })}><option value="center">وسط</option><option value="right">يمين</option><option value="left">يسار</option></select></label></div>;
 }

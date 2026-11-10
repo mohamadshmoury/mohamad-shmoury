@@ -1,6 +1,9 @@
 import { PDFDocument, PDFFont, rgb } from 'npm:pdf-lib@1.17.1';
 import fontkit from 'npm:@pdf-lib/fontkit@1.1.1';
 
+export const ARABIC_FONT_FAMILIES = ['noto_naskh', 'amiri', 'aref_ruqaa'] as const;
+export type ArabicFontFamily = typeof ARABIC_FONT_FAMILIES[number];
+
 export interface NamePlacement {
   page_index: number;
   page_width: number;
@@ -12,6 +15,7 @@ export interface NamePlacement {
   font_size: number;
   min_font_size: number;
   font_color: string;
+  font_family: ArabicFontFamily;
   alignment: 'center' | 'right' | 'left';
 }
 
@@ -112,6 +116,11 @@ export async function personalizePdf(
   return new Uint8Array(await document.save({ useObjectStreams: false, addDefaultPage: false }));
 }
 
-export async function readBundledArabicFont() {
-  return await Deno.readFile(new URL('./assets/NotoNaskhArabic-Regular.ttf', import.meta.url));
+export async function readBundledArabicFont(fontFamily: ArabicFontFamily = 'noto_naskh') {
+  const filenames: Record<ArabicFontFamily, string> = {
+    noto_naskh: 'NotoNaskhArabic-Regular.ttf',
+    amiri: 'Amiri-Regular.ttf',
+    aref_ruqaa: 'ArefRuqaa-Regular.ttf',
+  };
+  return await Deno.readFile(new URL(`./assets/${filenames[fontFamily]}`, import.meta.url));
 }

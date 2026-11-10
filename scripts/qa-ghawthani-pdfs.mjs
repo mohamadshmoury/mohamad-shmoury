@@ -5,7 +5,11 @@ import { PDFDocument, rgb } from 'pdf-lib';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const outputDir = resolve(ROOT, 'tmp/ghawthani/qa');
-const fontBytes = await readFile(resolve(ROOT, 'supabase/functions/_shared/assets/NotoNaskhArabic-Regular.ttf'));
+const fonts = [
+  ['noto-naskh', 'supabase/functions/_shared/assets/NotoNaskhArabic-Regular.ttf'],
+  ['amiri', 'supabase/functions/_shared/assets/Amiri-Regular.ttf'],
+  ['aref-ruqaa', 'supabase/functions/_shared/assets/ArefRuqaa-Regular.ttf'],
+];
 
 const templates = [
   ['male', 'supabase/seed-assets/ghawthani/ijazah-male.pdf', { page_index: 0, page_width: 595.276, page_height: 851.7, name_x: 92, name_y: 452, name_width: 295, name_height: 34, font_size: 21, min_font_size: 11 }],
@@ -44,22 +48,25 @@ function layout(name, font, config) {
 await mkdir(outputDir, { recursive: true });
 for (const [templateName, relativePath, config] of templates) {
   const source = await readFile(resolve(ROOT, relativePath));
-  for (const [nameKind, name] of names) {
-    const pdf = await PDFDocument.load(source, { updateMetadata: false });
-    pdf.registerFontkit(fontkit);
-    const page = pdf.getPages()[config.page_index];
-    const embeddedFont = await pdf.embedFont(fontBytes, { subset: true });
-    const fitted = layout(name, embeddedFont, config);
-    const totalHeight = fitted.lines.length * fitted.lineHeight;
-    const firstBaseline = config.name_y + (config.name_height + totalHeight) / 2 - fitted.lineHeight * 0.82;
-    fitted.lines.forEach((line, index) => {
-      const width = embeddedFont.widthOfTextAtSize(line, fitted.size);
-      page.drawText(line, { x: config.name_x + (config.name_width - width) / 2, y: firstBaseline - index * fitted.lineHeight, size: fitted.size, font: embeddedFont, color: rgb(0.09, 0.09, 0.09) });
-    });
-    const size = page.getSize();
-    if (Math.abs(size.width - config.page_width) > 0.8 || Math.abs(size.height - config.page_height) > 0.8) throw new Error(`Dimension changed for ${templateName}`);
-    const out = resolve(outputDir, `${templateName}-${nameKind}.pdf`);
-    await writeFile(out, await pdf.save({ useObjectStreams: false, addDefaultPage: false }));
-    console.log(`${templateName}-${nameKind}: ${name.length} chars, ${fitted.lines.length} line(s), ${fitted.size} pt`);
+  for (const [fontName, fontPath] of fonts) {
+    const fontBytes = await readFile(resolve(ROOT, fontPath));
+    for (const [nameKind, name] of names) {
+      const pdf = await PDFDocument.load(source, { updateMetadata: false });
+      pdf.registerFontkit(fontkit);
+      const page = pdf.getPages()[config.page_index];
+      const embeddedFont = await pdf.embedFont(fontBytes, { subset: true });
+      const fitted = layout(name, embeddedFont, config);
+      const totalHeight = fitted.lines.length * fitted.lineHeight;
+      const firstBaseline = config.name_y + (config.name_height + totalHeight) / 2 - fitted.lineHeight * 0.82;
+      fitted.lines.forEach((line, index) => {
+        const width = embeddedFont.widthOfTextAtSize(line, fitted.size);
+        page.drawText(line, { x: config.name_x + (config.name_width - width) / 2, y: firstBaseline - index * fitted.lineHeight, size: fitted.size, font: embeddedFont, color: rgb(0.09, 0.09, 0.09) });
+      });
+      const size = page.getSize();
+      if (Math.abs(size.width - config.page_width) > 0.8 || Math.abs(size.height - config.page_height) > 0.8) throw new Error(`Dimension changed for ${templateName}`);
+      const out = resolve(outputDir, `${templateName}-${fontName}-${nameKind}.pdf`);
+      await writeFile(out, await pdf.save({ useObjectStreams: false, addDefaultPage: false }));
+      console.log(`${templateName}-${fontName}-${nameKind}: ${name.length} chars, ${fitted.lines.length} line(s), ${fitted.size} pt`);
+    }
   }
 }
