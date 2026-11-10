@@ -380,6 +380,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
               dawrat={dawrat}
               setNotice={setNotice}
               setError={setError}
+              onSessionExpired={() => {
+                sessionStorage.removeItem(GH_ADMIN_TOKEN_KEY);
+                setAdminToken('');
+                setError('');
+                setLoginError('انتهت جلسة إدارة الإجازات والشهادات. أدخل رمز الإدارة مرة أخرى.');
+              }}
             />
           )}
         </motion.div>

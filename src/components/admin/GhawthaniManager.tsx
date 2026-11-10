@@ -31,6 +31,7 @@ interface Props {
   dawrat: Dawra[];
   setNotice: (value: string) => void;
   setError: (value: string) => void;
+  onSessionExpired: () => void;
 }
 
 type Filters = {
@@ -67,7 +68,7 @@ function generationText(value: string) {
   return ({ pending: 'بانتظار التوليد', processing: 'قيد التوليد', completed: 'تم التوليد', failed: 'فشل التوليد', not_required: 'لا يلزم توليد' } as Record<string, string>)[value] || value;
 }
 
-export default function GhawthaniManager({ adminToken, dawrat, setNotice, setError }: Props) {
+export default function GhawthaniManager({ adminToken, dawrat, setNotice, setError, onSessionExpired }: Props) {
   const [section, setSection] = useState<'submissions' | 'templates' | 'programs'>('submissions');
   const [programs, setPrograms] = useState<IjazahProgram[]>([]);
   const [selectedProgramId, setSelectedProgramId] = useState('');
@@ -92,6 +93,15 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
   const [sampleUrl, setSampleUrl] = useState('');
   const pageSize = 20;
 
+  function reportAdminError(caught: unknown, fallback: string) {
+    const message = caught instanceof Error ? caught.message : fallback;
+    if (message.includes('انتهت جلسة الإدارة') || message.includes('غير صالحة')) {
+      onSessionExpired();
+      return;
+    }
+    setError(message);
+  }
+
   const loadPrograms = useCallback(async () => {
     setLoading(true);
     try {
@@ -99,7 +109,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setPrograms(result.programs);
       setSelectedProgramId((current) => current || result.programs[0]?.id || '');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر تحميل برامج الإجازات والشهادات.');
+      reportAdminError(caught, 'تعذر تحميل برامج الإجازات والشهادات.');
     } finally {
       setLoading(false);
     }
@@ -125,7 +135,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setSummary(result.summary);
       if (selected) setSelected(result.rows.find((row) => row.id === selected.id) || selected);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر تحميل طلبات الغوثاني.');
+      reportAdminError(caught, 'تعذر تحميل طلبات الغوثاني.');
     } finally {
       setLoading(false);
     }
@@ -140,7 +150,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setTemplates(result.templates);
       if (selectedTemplate) setSelectedTemplate(result.templates.find((item) => item.id === selectedTemplate.id) || null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر تحميل القوالب.');
+      reportAdminError(caught, 'تعذر تحميل القوالب.');
     } finally {
       setLoading(false);
     }
@@ -164,7 +174,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       const result = await ghawthaniAdmin<{ submission: GhawthaniSubmission }>(adminToken, 'submission_details', { submission_id: row.id });
       setSelected(result.submission);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر تحميل التفاصيل.');
+      reportAdminError(caught, 'تعذر تحميل التفاصيل.');
     } finally {
       setLoading(false);
     }
@@ -179,7 +189,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setNotice('اكتملت إعادة محاولة توليد المستندات.');
       await loadRows();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'فشلت إعادة المحاولة.');
+      reportAdminError(caught, 'فشلت إعادة المحاولة.');
     } finally {
       setLoading(false);
     }
@@ -190,7 +200,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       const result = await ghawthaniAdmin<{ url: string }>(adminToken, 'document_url', { document_id: document.id, download });
       window.open(result.url, '_blank', 'noopener,noreferrer');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر فتح المستند.');
+      reportAdminError(caught, 'تعذر فتح المستند.');
     }
   }
 
@@ -233,7 +243,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setNotice('رُفع القالب كنسخة غير مفعّلة. أنشئ عينة وافحصها قبل التفعيل.');
       await loadTemplates();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر رفع القالب.');
+      reportAdminError(caught, 'تعذر رفع القالب.');
     } finally {
       setLoading(false);
     }
@@ -252,7 +262,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setNotice(result.created_new_version ? 'حُفظ الضبط كنسخة جديدة للمحافظة على أثر النسخة المفعّلة.' : 'حُفظ موضع الاسم. يلزم إعادة فحص عينة.');
       await loadTemplates();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر حفظ موضع الاسم.');
+      reportAdminError(caught, 'تعذر حفظ موضع الاسم.');
     } finally {
       setLoading(false);
     }
@@ -267,7 +277,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setSampleUrl(result.sample_url);
       setNotice('تم إنشاء العينة. افحصها بصريًا ثم اعتمد النتيجة إذا كانت صحيحة.');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر إنشاء العينة.');
+      reportAdminError(caught, 'تعذر إنشاء العينة.');
     } finally {
       setLoading(false);
     }
@@ -282,7 +292,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setNotice('تم اعتماد نتيجة العينة. يمكن الآن تفعيل هذه النسخة.');
       await loadTemplates();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر اعتماد القالب.');
+      reportAdminError(caught, 'تعذر اعتماد القالب.');
     } finally {
       setLoading(false);
     }
@@ -296,7 +306,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setNotice('تم تفعيل نسخة القالب. ستستخدم في الإصدارات الجديدة فقط.');
       await loadTemplates();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر تفعيل القالب.');
+      reportAdminError(caught, 'تعذر تفعيل القالب.');
     } finally {
       setLoading(false);
     }
@@ -336,7 +346,7 @@ export default function GhawthaniManager({ adminToken, dawrat, setNotice, setErr
       setSelectedProgramId(result.program.id);
       setProgramForm({ id: '', dawra_id: '', slug: '', title: '', course_subject: '', instructor_name: '', introduction: '', trust_statement: 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة.', is_active: true });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر حفظ البرنامج.');
+      reportAdminError(caught, 'تعذر حفظ البرنامج.');
     } finally {
       setLoading(false);
     }
