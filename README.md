@@ -51,6 +51,16 @@ SUPABASE_URL='https://PROJECT.supabase.co' \
 SUPABASE_SERVICE_ROLE_KEY='server-only-key' npm run seed:ghawthani
 ```
 
+For the linked production project in this workspace, the non-interactive equivalents are:
+
+```bash
+supabase db push --remote --yes
+supabase functions deploy ghawthani --remote=baqexzloorjekztidtei --yes
+supabase functions deploy ghawthani-admin --remote=baqexzloorjekztidtei --yes
+```
+
+The second migration (`202611080002_generalize_ijazah_programs.sql`) is safe for a project where the original Ghawthani tables already existed: it adds and backfills `program_id` before rebuilding the program-scoped indexes.
+
 ### Template workflow
 
 Open **إجازات وشهادات** in the existing dashboard. Under **إعداد الدورات**, create or select the course program and its public slug. The program selector scopes the requests, statistics, and templates. Under **إدارة القوالب**, upload each PDF, adjust the name box in PDF points, generate a sample with an Arabic test name, inspect the full-size PDF, approve the sample, then activate that version. Editing an active template creates a new version so earlier issued documents retain their original template reference.

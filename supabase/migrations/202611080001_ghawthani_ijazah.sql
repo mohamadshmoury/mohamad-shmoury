@@ -69,9 +69,32 @@ create table if not exists public.ghawthani_template_versions (
   )
 );
 
+-- Upgrade installations that already created the original Ghawthani-only
+-- tables before programs were introduced. CREATE TABLE IF NOT EXISTS does not
+-- add new columns to an existing table.
+alter table public.ghawthani_template_versions
+  add column if not exists program_id uuid;
+update public.ghawthani_template_versions
+set program_id = '9b6ecacd-fb7b-4c03-aee5-71a2ec4f5210'
+where program_id is null;
+alter table public.ghawthani_template_versions
+  alter column program_id set not null,
+  alter column storage_bucket set default 'ijazah-private';
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'ghawthani_template_versions_program_id_fkey') then
+    alter table public.ghawthani_template_versions
+      add constraint ghawthani_template_versions_program_id_fkey
+      foreign key (program_id) references public.ijazah_programs(id) on delete cascade;
+  end if;
+end;
+$$;
+
+drop index if exists public.uq_ghawthani_active_template;
 create unique index if not exists uq_ghawthani_active_template
   on public.ghawthani_template_versions(program_id, template_type)
   where is_active;
+drop index if exists public.idx_ghawthani_template_versions_type_created;
 create index if not exists idx_ghawthani_template_versions_type_created
   on public.ghawthani_template_versions(program_id, template_type, created_at desc);
 
@@ -105,10 +128,29 @@ create table if not exists public.ghawthani_submissions (
   updated_at timestamptz not null default now()
 );
 
+alter table public.ghawthani_submissions
+  add column if not exists program_id uuid;
+update public.ghawthani_submissions
+set program_id = '9b6ecacd-fb7b-4c03-aee5-71a2ec4f5210'
+where program_id is null;
+alter table public.ghawthani_submissions
+  alter column program_id set not null;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'ghawthani_submissions_program_id_fkey') then
+    alter table public.ghawthani_submissions
+      add constraint ghawthani_submissions_program_id_fkey
+      foreign key (program_id) references public.ijazah_programs(id) on delete restrict;
+  end if;
+end;
+$$;
+
+drop index if exists public.idx_ghawthani_submissions_submitted;
 create index if not exists idx_ghawthani_submissions_submitted
   on public.ghawthani_submissions(program_id, submitted_at desc);
 create index if not exists idx_ghawthani_submissions_name
   on public.ghawthani_submissions using gin (full_name gin_trgm_ops);
+drop index if exists public.idx_ghawthani_submissions_filters;
 create index if not exists idx_ghawthani_submissions_filters
   on public.ghawthani_submissions(program_id, gender, eligibility, generation_status, attendance_count);
 
@@ -128,6 +170,9 @@ create table if not exists public.ghawthani_issued_documents (
   unique (submission_id, document_type),
   unique (storage_bucket, storage_path)
 );
+
+alter table public.ghawthani_issued_documents
+  alter column storage_bucket set default 'ijazah-private';
 
 create index if not exists idx_ghawthani_documents_submission
   on public.ghawthani_issued_documents(submission_id, document_type);

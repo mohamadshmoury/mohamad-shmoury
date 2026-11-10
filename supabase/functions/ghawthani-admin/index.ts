@@ -104,6 +104,13 @@ function requireAllowedOrigin(request: Request) {
   if (!configured) throw new Error('نطاق لوحة الإدارة المسموح غير مضبوط على الخادم.');
   const origin = request.headers.get('origin');
   if (!origin) return;
+  try {
+    const host = new URL(origin).hostname;
+    // Local development remains usable without weakening production origins.
+    if (host === 'localhost' || host === '127.0.0.1') return;
+  } catch {
+    throw new Error('نطاق الطلب غير صالح.');
+  }
   const allowed = configured.split(',').map((value) => value.trim()).filter(Boolean);
   if (!allowed.includes(origin)) throw new Error('هذا النطاق غير مصرح له باستخدام إدارة الإجازات والشهادات.');
 }
