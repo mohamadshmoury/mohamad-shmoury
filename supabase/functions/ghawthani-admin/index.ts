@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.50.0';
 import { PDFDocument } from 'npm:pdf-lib@1.17.1';
 import { corsHeaders, errorResponse, jsonResponse } from '../_shared/cors.ts';
-import { constantTimeEqual, createAdminToken, sha256Hex, verifyAdminToken } from '../_shared/crypto.ts';
+import { constantTimeEqual, createAdminToken, createParticipantToken, sha256Hex, verifyAdminToken } from '../_shared/crypto.ts';
 import { issueSubmissionDocuments, signedDocuments } from '../_shared/issuance.ts';
 import { ARABIC_FONT_FAMILIES, cleanParticipantName, personalizePdf, readBundledArabicFont, type ArabicFontFamily, type NamePlacement } from '../_shared/pdf.ts';
 
@@ -10,6 +10,8 @@ const TEMPLATE_TYPES = ['ijazah_male', 'ijazah_female', 'participation_certifica
 const SUBMISSION_SELECT = `
   id, program_id, full_name, gender, attended_day_1, attended_day_2, attended_day_3,
   attendance_count, eligibility, generation_status, generation_error,
+  entitlement_id, certificate_eligible, ijazah_eligible, eligibility_source,
+  approval_status, approved_at, approval_note, revoked_at, revoked_reason,
   generation_started_at, generation_completed_at, submitted_at, updated_at,
   documents:ghawthani_issued_documents(
     id, document_type, template_version_id, generation_status,
@@ -123,20 +125,82 @@ function requireProgramId(value: unknown) {
   return value;
 }
 
+function optionalDate(value: unknown, label: string) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) throw new Error(`قيمة ${label} غير صالحة.`);
+  return new Date(value).toISOString();
+}
+
+async function syncExamEntitlements(client: SupabaseClient, program: Record<string, any>) {
+  if (program.eligibility_method !== 'passed_exam' || !program.dawra_id) return;
+  const { data: exams, error: examsError } = await client
+    .from('shmoury_exams')
+    .select('id')
+    .eq('dawra_id', program.dawra_id);
+  if (examsError || !exams?.length) return;
+  const examIds = exams.map((row) => row.id);
+  const { data: passedSubmissions, error: passedError } = await client
+    .from('shmoury_submissions')
+    .select('id, student_name')
+    .in('exam_id', examIds)
+    .eq('status', 'passed')
+    .order('submitted_at', { ascending: false });
+  if (passedError || !passedSubmissions?.length) return;
+  const { data: existingEntitlements, error: existingError } = await client
+    .from('ijazah_entitlements')
+    .select('id, source_id')
+    .eq('program_id', program.id)
+    .eq('source_type', 'exam_submission');
+  if (existingError) return;
+  const existingSourceIds = new Set((existingEntitlements || []).map((row) => row.source_id).filter(Boolean));
+  const certificateEligible = program.offers_certificate !== false;
+  const ijazahEligible = program.offers_ijazah !== false;
+  if (!certificateEligible && !ijazahEligible) return;
+
+  for (const examSub of passedSubmissions) {
+    if (existingSourceIds.has(examSub.id)) continue;
+    try {
+      const fullName = cleanParticipantName(examSub.student_name);
+      const id = crypto.randomUUID();
+      const token = await createParticipantToken(`entitlement:${id}`);
+      await client.from('ijazah_entitlements').insert({
+        id,
+        program_id: program.id,
+        source_type: 'exam_submission',
+        source_id: examSub.id,
+        full_name: fullName,
+        certificate_eligible: certificateEligible,
+        ijazah_eligible: ijazahEligible,
+        access_token_hash: await sha256Hex(token),
+      });
+    } catch {
+      // Ignore individual rows with invalid names or concurrent inserts.
+    }
+  }
+}
+
 async function summary(client: SupabaseClient, programId: string) {
-  const [all, ijazah, certificate, failures] = await Promise.all([
+  const [all, ijazah, certificateOnly, failures, entitlements, issued, pendingApprovals, revokedCount] = await Promise.all([
     client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId),
-    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).eq('eligibility', 'ijazah_and_certificate'),
-    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).eq('eligibility', 'certificate_only'),
+    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).or('ijazah_eligible.eq.true,and(ijazah_eligible.is.null,eligibility.eq.ijazah_and_certificate)'),
+    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).or('and(certificate_eligible.eq.true,or(ijazah_eligible.eq.false,ijazah_eligible.is.null)),and(certificate_eligible.is.null,eligibility.eq.certificate_only)'),
     client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).eq('generation_status', 'failed'),
+    client.from('ijazah_entitlements').select('id', { count: 'exact', head: true }).eq('program_id', programId).is('revoked_at', null),
+    client.from('ghawthani_issued_documents').select('id, submission:ghawthani_submissions!inner(program_id)', { count: 'exact', head: true }).eq('submission.program_id', programId).eq('generation_status', 'issued'),
+    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).eq('approval_status', 'pending_approval'),
+    client.from('ghawthani_submissions').select('id', { count: 'exact', head: true }).eq('program_id', programId).not('revoked_at', 'is', null),
   ]);
-  const error = [all, ijazah, certificate, failures].find((result) => result.error)?.error;
+  const error = [all, ijazah, certificateOnly, failures, entitlements, issued, pendingApprovals, revokedCount].find((result) => result.error)?.error;
   if (error) throw error;
   return {
     submissions: all.count || 0,
     ijazah_eligible: ijazah.count || 0,
-    certificate_only: certificate.count || 0,
+    certificate_only: certificateOnly.count || 0,
     generation_failures: failures.count || 0,
+    eligible_participants: entitlements.count || 0,
+    issued_documents: issued.count || 0,
+    pending_approvals: pendingApprovals.count || 0,
+    revoked_count: revokedCount.count || 0,
   };
 }
 
@@ -173,6 +237,17 @@ Deno.serve(async (request) => {
       const slug = typeof body.slug === 'string' ? body.slug.trim().toLowerCase() : '';
       if (title.length < 3 || courseSubject.length < 3 || instructorName.length < 3) throw new Error('أكمل عنوان البرنامج وموضوع الدورة واسم المحاضر.');
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error('الرابط المختصر يقبل أحرفًا إنجليزية صغيرة وأرقامًا وشرطات فقط.');
+      const offersCertificate = body.offers_certificate !== false;
+      const offersIjazah = body.offers_ijazah !== false;
+      if (!offersCertificate && !offersIjazah) throw new Error('يجب تفعيل الشهادة أو الإجازة على الأقل.');
+      const eligibilityMethod = ['legacy_attendance', 'passed_exam', 'manual'].includes(String(body.eligibility_method))
+        ? String(body.eligibility_method)
+        : 'legacy_attendance';
+      const availableFrom = optionalDate(body.available_from, 'بداية الإتاحة');
+      const availableUntil = optionalDate(body.available_until, 'نهاية الإتاحة');
+      if (availableFrom && availableUntil && Date.parse(availableUntil) <= Date.parse(availableFrom)) {
+        throw new Error('يجب أن تكون نهاية الإتاحة بعد بدايتها.');
+      }
       const values = {
         dawra_id: typeof body.dawra_id === 'string' && body.dawra_id ? body.dawra_id : null,
         slug,
@@ -184,6 +259,12 @@ Deno.serve(async (request) => {
           ? body.trust_statement.trim()
           : 'تُعتمد إجابات الحضور على الأمانة العلمية والثقة.',
         is_active: body.is_active !== false,
+        offers_certificate: offersCertificate,
+        offers_ijazah: offersIjazah,
+        eligibility_method: eligibilityMethod,
+        requires_approval: body.requires_approval === true,
+        available_from: availableFrom,
+        available_until: availableUntil,
       };
       const programId = typeof body.program_id === 'string' ? body.program_id : '';
       const query = programId
@@ -191,7 +272,116 @@ Deno.serve(async (request) => {
         : client.from('ijazah_programs').insert(values);
       const { data, error } = await query.select('*').single();
       if (error) throw error;
+      if (data.eligibility_method === 'passed_exam') {
+        await syncExamEntitlements(client, data);
+      }
       return jsonResponse({ program: data });
+    }
+
+    if (action === 'list_entitlements') {
+      const programId = requireProgramId(body.program_id);
+      const { data: program, error: programError } = await client
+        .from('ijazah_programs')
+        .select('*')
+        .eq('id', programId)
+        .single();
+      if (programError) throw programError;
+      if (program.eligibility_method === 'passed_exam') {
+        await syncExamEntitlements(client, program);
+      }
+      const { data: entitlements, error } = await client
+        .from('ijazah_entitlements')
+        .select('*')
+        .eq('program_id', programId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const ids = (entitlements || []).map((row) => row.id);
+      let requests: Record<string, any>[] = [];
+      if (ids.length) {
+        const { data, error: requestsError } = await client
+          .from('ghawthani_submissions')
+          .select(SUBMISSION_SELECT)
+          .in('entitlement_id', ids);
+        if (requestsError) throw requestsError;
+        requests = data || [];
+      }
+      const byEntitlement = new Map(requests.map((row) => [row.entitlement_id, row]));
+      return jsonResponse({
+        rows: (entitlements || []).map((row) => ({ ...row, request: byEntitlement.get(row.id) || null })),
+      });
+    }
+
+    if (action === 'create_entitlement') {
+      const programId = requireProgramId(body.program_id);
+      const { data: program, error: programError } = await client.from('ijazah_programs').select('*').eq('id', programId).single();
+      if (programError) throw programError;
+      if (program.eligibility_method !== 'manual') throw new Error('يجب اختيار التأهيل اليدوي في إعدادات البرنامج أولًا.');
+      const fullName = cleanParticipantName(body.full_name);
+      const gender = body.gender === 'male' || body.gender === 'female' ? body.gender : null;
+      const certificateEligible = body.certificate_eligible === true && program.offers_certificate !== false;
+      const ijazahEligible = body.ijazah_eligible === true && program.offers_ijazah !== false;
+      if (!certificateEligible && !ijazahEligible) throw new Error('حدد نوع مستند واحد على الأقل.');
+      const id = crypto.randomUUID();
+      const token = await createParticipantToken(`entitlement:${id}`);
+      const { data, error } = await client.from('ijazah_entitlements').insert({
+        id,
+        program_id: programId,
+        source_type: 'manual',
+        full_name: fullName,
+        gender,
+        certificate_eligible: certificateEligible,
+        ijazah_eligible: ijazahEligible,
+        access_token_hash: await sha256Hex(token),
+      }).select('*').single();
+      if (error) throw error;
+      return jsonResponse({
+        entitlement: data,
+        participant_claim: { kind: 'entitlement', id, token, program_slug: program.slug },
+        participant_url: `/certificates?claim=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}`,
+      });
+    }
+
+    if (action === 'entitlement_access') {
+      const { data, error } = await client
+        .from('ijazah_entitlements')
+        .select('id, program:ijazah_programs(slug), revoked_at')
+        .eq('id', body.entitlement_id)
+        .single();
+      if (error) throw error;
+      if (data.revoked_at) throw new Error('تم إلغاء هذا الاستحقاق.');
+      const token = await createParticipantToken(`entitlement:${data.id}`);
+      return jsonResponse({
+        participant_claim: { kind: 'entitlement', id: data.id, token },
+        participant_url: `/certificates?claim=${encodeURIComponent(data.id)}&token=${encodeURIComponent(token)}`,
+      });
+    }
+
+    if (action === 'revoke_entitlement') {
+      const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 500) : '';
+      const nowIso = new Date().toISOString();
+      const { data, error } = await client.from('ijazah_entitlements').update({
+        revoked_at: nowIso,
+        revoked_reason: reason || null,
+      }).eq('id', body.entitlement_id).select('*').single();
+      if (error) throw error;
+      await client.from('ghawthani_submissions').update({
+        revoked_at: nowIso,
+        revoked_reason: reason || null,
+      }).eq('entitlement_id', data.id);
+      return jsonResponse({ entitlement: data });
+    }
+
+    if (action === 'restore_entitlement') {
+      const { data, error } = await client.from('ijazah_entitlements').update({
+        revoked_at: null,
+        revoked_reason: null,
+      }).eq('id', body.entitlement_id).select('*').single();
+      if (error) throw error;
+      await client.from('ghawthani_submissions').update({
+        revoked_at: null,
+        revoked_reason: null,
+      }).eq('entitlement_id', data.id);
+      return jsonResponse({ entitlement: data });
     }
 
     if (action === 'summary') return jsonResponse({ summary: await summary(client, requireProgramId(body.program_id)) });
@@ -205,6 +395,9 @@ Deno.serve(async (request) => {
       if (body.gender === 'male' || body.gender === 'female') query = query.eq('gender', body.gender);
       if (['none', 'certificate_only', 'ijazah_and_certificate'].includes(String(body.eligibility))) query = query.eq('eligibility', body.eligibility);
       if (['pending', 'processing', 'completed', 'failed', 'not_required'].includes(String(body.generation_status))) query = query.eq('generation_status', body.generation_status);
+      if (['pending_approval', 'approved', 'rejected'].includes(String(body.approval_status))) query = query.eq('approval_status', body.approval_status);
+      if (body.revoked === 'revoked') query = query.not('revoked_at', 'is', null);
+      if (body.revoked === 'active') query = query.is('revoked_at', null);
       if ([0, 1, 2, 3].includes(Number(body.attendance_count))) query = query.eq('attendance_count', Number(body.attendance_count));
       const from = (page - 1) * pageSize;
       const { data, count, error } = await query.order('submitted_at', { ascending: false }).range(from, from + pageSize - 1);
@@ -216,6 +409,93 @@ Deno.serve(async (request) => {
       const { data, error } = await client.from('ghawthani_submissions').select(SUBMISSION_SELECT).eq('id', body.submission_id).single();
       if (error) throw error;
       return jsonResponse({ submission: data });
+    }
+
+    if (action === 'approve_submission') {
+      const rawNote = typeof body.note === 'string' ? body.note : typeof body.approval_note === 'string' ? body.approval_note : '';
+      const note = rawNote.trim().slice(0, 500);
+      const { data: submission, error: updateError } = await client
+        .from('ghawthani_submissions')
+        .update({
+          approval_status: 'approved',
+          approved_at: new Date().toISOString(),
+          approval_note: note || null,
+          generation_status: 'pending',
+          generation_error: null,
+        })
+        .eq('id', body.submission_id)
+        .select('*')
+        .single();
+      if (updateError) throw updateError;
+      try {
+        await issueSubmissionDocuments(client, submission);
+      } catch {
+        // Keep approval recorded even if PDF generation fails; admin sees the error state and can retry.
+      }
+      const { data: refreshed, error: refreshedError } = await client.from('ghawthani_submissions').select(SUBMISSION_SELECT).eq('id', submission.id).single();
+      if (refreshedError) throw refreshedError;
+      return jsonResponse({ submission: refreshed });
+    }
+
+    if (action === 'reject_submission') {
+      const rawNote = typeof body.note === 'string' ? body.note : typeof body.approval_note === 'string' ? body.approval_note : '';
+      const note = rawNote.trim().slice(0, 500);
+      const { data: refreshed, error } = await client
+        .from('ghawthani_submissions')
+        .update({
+          approval_status: 'rejected',
+          approval_note: note || null,
+          generation_status: 'not_required',
+          generation_error: null,
+        })
+        .eq('id', body.submission_id)
+        .select(SUBMISSION_SELECT)
+        .single();
+      if (error) throw error;
+      return jsonResponse({ submission: refreshed });
+    }
+
+    if (action === 'revoke_submission') {
+      const rawReason = typeof body.reason === 'string' ? body.reason : typeof body.revoked_reason === 'string' ? body.revoked_reason : '';
+      const reason = rawReason.trim().slice(0, 500);
+      const nowIso = new Date().toISOString();
+      const { data: refreshed, error } = await client
+        .from('ghawthani_submissions')
+        .update({
+          revoked_at: nowIso,
+          revoked_reason: reason || null,
+        })
+        .eq('id', body.submission_id)
+        .select(SUBMISSION_SELECT)
+        .single();
+      if (error) throw error;
+      if (refreshed.entitlement_id) {
+        await client.from('ijazah_entitlements').update({
+          revoked_at: nowIso,
+          revoked_reason: reason || null,
+        }).eq('id', refreshed.entitlement_id);
+      }
+      return jsonResponse({ submission: refreshed });
+    }
+
+    if (action === 'restore_submission') {
+      const { data: refreshed, error } = await client
+        .from('ghawthani_submissions')
+        .update({
+          revoked_at: null,
+          revoked_reason: null,
+        })
+        .eq('id', body.submission_id)
+        .select(SUBMISSION_SELECT)
+        .single();
+      if (error) throw error;
+      if (refreshed.entitlement_id) {
+        await client.from('ijazah_entitlements').update({
+          revoked_at: null,
+          revoked_reason: null,
+        }).eq('id', refreshed.entitlement_id);
+      }
+      return jsonResponse({ submission: refreshed });
     }
 
     if (action === 'delete_submission') {
@@ -247,6 +527,10 @@ Deno.serve(async (request) => {
     if (action === 'retry') {
       const { data: submission, error } = await client.from('ghawthani_submissions').select('*').eq('id', body.submission_id).single();
       if (error) throw error;
+      if (submission.revoked_at) throw new Error('تم إلغاء صلاحية هذا الطلب ولا يمكن إعادة توليده.');
+      if (submission.approval_status && submission.approval_status !== 'approved') {
+        throw new Error('يجب اعتماد الطلب من الإدارة قبل إعادة محاولة التوليد.');
+      }
       if (submission.generation_status === 'completed' || submission.generation_status === 'not_required') {
         throw new Error('لا يحتاج هذا الطلب إلى إعادة توليد.');
       }

@@ -54,6 +54,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   
   const [selectedDawraId, setSelectedDawraId] = useState('');
   const [selectedExamId, setSelectedExamId] = useState('');
+  const [requestedGhawthaniSection, setRequestedGhawthaniSection] = useState<
+    'eligibility' | 'submissions' | 'issued' | 'templates' | 'programs' | undefined
+  >(undefined);
   
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
@@ -306,6 +309,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         >
           {activeTab === 'courses' && (
             <CourseManager
+              adminToken={adminToken}
               dawrat={dawrat}
               setDawrat={setDawrat}
               exams={exams}
@@ -314,6 +318,11 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
               selectDawra={setSelectedDawraId}
               setActiveTab={setActiveTab}
               setSelectedExamId={setSelectedExamId}
+              onManageCourseCertificates={(dawraId, targetSection) => {
+                setSelectedDawraId(dawraId);
+                setRequestedGhawthaniSection(targetSection);
+                setActiveTab('ghawthani');
+              }}
               loading={loading}
               setLoading={setLoading}
               setNotice={setNotice}
@@ -378,6 +387,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             <GhawthaniManager
               adminToken={adminToken}
               dawrat={dawrat}
+              selectedDawraId={selectedDawraId}
+              requestedSection={requestedGhawthaniSection}
+              onRequestedSectionHandled={() => setRequestedGhawthaniSection(undefined)}
               setNotice={setNotice}
               setError={setError}
               onSessionExpired={() => {

@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Award,
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
@@ -15,12 +16,14 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { checkExistingSubmission, createSubmission, getExamWithQuestions } from '../lib/examService';
 import { formatExamEndTime, isExamEnded } from '../lib/examTiming';
+import { claimPassedExam } from '../lib/ghawthaniService';
 import { getCorrectAnswerLabel, scoreExam } from '../lib/scoring';
 import type { Exam, Question, Submission } from '../types';
 
 interface AssessmentFlowProps {
   examSummary: Exam;
   onBack: () => void;
+  onOpenCertificates?: () => void;
 }
 
 type Stage = 'profile' | 'questions' | 'result';
@@ -127,7 +130,7 @@ function ExamAnswerReview({ exam, questions }: { exam: Exam; questions: Question
   );
 }
 
-export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowProps) {
+export default function AssessmentFlow({ examSummary, onBack, onOpenCertificates }: AssessmentFlowProps) {
   const [exam, setExam] = useState<Exam>(examSummary);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -144,9 +147,11 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [result, setResult] = useState<Submission | null>(null);
+  const [eligibleDocumentsAvailable, setEligibleDocumentsAvailable] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const startedAtRef = useRef<string>('');
   const autoSubmittedRef = useRef(false);
+  const claimedResultRef = useRef('');
 
   const questions = useMemo(() => exam.questions || [], [exam.questions]);
   const currentQuestion = questions[currentIndex];
@@ -321,6 +326,16 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
     void submitExam();
   }, [examEnded, stage, submitting]);
 
+  useEffect(() => {
+    if (stage !== 'result' || result?.status !== 'passed' || !result.id || result.id.startsWith('local-') || claimedResultRef.current === result.id) return;
+    claimedResultRef.current = result.id;
+    claimPassedExam(result.id)
+      .then(({ claims }) => setEligibleDocumentsAvailable(claims.length > 0))
+      .catch(() => {
+        // A certificate claim must never invalidate an already saved exam result.
+      });
+  }, [result, stage]);
+
   if (loading) {
     return (
       <main className="centered-screen">
@@ -396,6 +411,20 @@ export default function AssessmentFlow({ examSummary, onBack }: AssessmentFlowPr
               </strong>
             </div>
           </div>
+
+          {eligibleDocumentsAvailable && (
+            <div className="notice success full">
+              <Award size={19} aria-hidden />
+              <span>أصبح لديك مستند مؤهل لهذه الدورة.</span>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => (onOpenCertificates ? onOpenCertificates() : window.location.assign('/certificates'))}
+              >
+                فتح الإجازات والشهادات
+              </button>
+            </div>
+          )}
 
           {!showDetailedAnswers && (
             <div className="notice warning full">

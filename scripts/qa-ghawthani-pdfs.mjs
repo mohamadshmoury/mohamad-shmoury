@@ -39,10 +39,27 @@ function layout(name, font, config) {
   for (let size = config.font_size; size >= config.min_font_size; size -= 0.5) {
     for (const lines of [[name], split(name)]) {
       const lineHeight = size * 1.15;
-      if (lines.every((line) => font.widthOfTextAtSize(line, size) <= config.name_width) && lines.length * lineHeight <= config.name_height) return { lines, size, lineHeight };
+      if (lines.every((line) => lineWidth(font, line, size) <= config.name_width) && lines.length * lineHeight <= config.name_height) return { lines, size, lineHeight };
     }
   }
   throw new Error(`Name did not fit: ${name}`);
+}
+
+function lineWidth(font, line, size) {
+  const run = font.layout(line);
+  return run.positions.reduce((total, position) => total + position.xAdvance, 0) * size / font.unitsPerEm;
+}
+
+function drawOutlinedLine(page, font, line, x, baseline, size) {
+  const run = font.layout(line);
+  const scale = size / font.unitsPerEm;
+  let cursorX = x;
+  run.glyphs.forEach((glyph, index) => {
+    const position = run.positions[index];
+    const path = glyph.path.scale(1, -1).toSVG();
+    if (path) page.drawSvgPath(path, { x: cursorX + position.xOffset * scale, y: baseline + position.yOffset * scale, scale, color: rgb(0.09, 0.09, 0.09) });
+    cursorX += position.xAdvance * scale;
+  });
 }
 
 await mkdir(outputDir, { recursive: true });
@@ -52,15 +69,14 @@ for (const [templateName, relativePath, config] of templates) {
     const fontBytes = await readFile(resolve(ROOT, fontPath));
     for (const [nameKind, name] of names) {
       const pdf = await PDFDocument.load(source, { updateMetadata: false });
-      pdf.registerFontkit(fontkit);
       const page = pdf.getPages()[config.page_index];
-      const embeddedFont = await pdf.embedFont(fontBytes, { subset: true });
-      const fitted = layout(name, embeddedFont, config);
+      const outlineFont = fontkit.create(fontBytes);
+      const fitted = layout(name, outlineFont, config);
       const totalHeight = fitted.lines.length * fitted.lineHeight;
       const firstBaseline = config.name_y + (config.name_height + totalHeight) / 2 - fitted.lineHeight * 0.82;
       fitted.lines.forEach((line, index) => {
-        const width = embeddedFont.widthOfTextAtSize(line, fitted.size);
-        page.drawText(line, { x: config.name_x + (config.name_width - width) / 2, y: firstBaseline - index * fitted.lineHeight, size: fitted.size, font: embeddedFont, color: rgb(0.09, 0.09, 0.09) });
+        const width = lineWidth(outlineFont, line, fitted.size);
+        drawOutlinedLine(page, outlineFont, line, config.name_x + (config.name_width - width) / 2, firstBaseline - index * fitted.lineHeight, fitted.size);
       });
       const size = page.getSize();
       if (Math.abs(size.width - config.page_width) > 0.8 || Math.abs(size.height - config.page_height) > 0.8) throw new Error(`Dimension changed for ${templateName}`);

@@ -12,6 +12,16 @@ export function jsonResponse(body: unknown, status = 200) {
 }
 
 export function errorResponse(error: unknown, status = 400) {
-  const message = error instanceof Error ? error.message : 'حدث خطأ غير متوقع.';
+  // Errors raised by npm modules inside the Deno isolate can come from a
+  // different JavaScript realm, where `instanceof Error` is false even though
+  // the value still exposes a normal message.
+  const crossRealmMessage = error && typeof error === 'object' && 'message' in error
+    ? (error as { message?: unknown }).message
+    : undefined;
+  const message = error instanceof Error
+    ? error.message
+    : typeof crossRealmMessage === 'string'
+      ? crossRealmMessage
+      : 'حدث خطأ غير متوقع.';
   return jsonResponse({ error: message }, status);
 }

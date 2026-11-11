@@ -1,4 +1,5 @@
 import {
+  Award,
   BookOpen,
   CalendarDays,
   CheckCircle2,
@@ -8,11 +9,13 @@ import {
   Link2,
   Loader2,
   Plus,
+  Settings2,
   Trash2,
   UploadCloud,
 } from 'lucide-react';
-import { FormEvent, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { createDawra, updateDawra, uploadPublicAsset, updateExamPublishState, updateExamSettings, deleteDawra } from '../../lib/examService';
+import { computeProgramAvailability, ghawthaniAdmin, type IjazahProgram } from '../../lib/ghawthaniService';
 import type {
   Dawra,
   Exam,
@@ -22,14 +25,19 @@ import type {
 } from '../../types';
 
 interface CourseManagerProps {
+  adminToken?: string;
   dawrat: Dawra[];
   exams: Exam[];
   selectedDawraId: string;
   setDawrat: React.Dispatch<React.SetStateAction<Dawra[]>>;
   setExams: React.Dispatch<React.SetStateAction<Exam[]>>;
   selectDawra: (id: string) => void;
-  setActiveTab: (tab: 'courses' | 'exams' | 'questions' | 'submissions' | 'profile') => void;
+  setActiveTab: (tab: 'courses' | 'exams' | 'questions' | 'submissions' | 'profile' | 'ghawthani') => void;
   setSelectedExamId: (id: string) => void;
+  onManageCourseCertificates?: (
+    dawraId: string,
+    section?: 'eligibility' | 'submissions' | 'issued' | 'templates' | 'programs',
+  ) => void;
   loading: boolean;
   setLoading: (loading: boolean) => void;
   setNotice: (notice: string) => void;
@@ -68,6 +76,7 @@ function isValidPublicUrl(value: string) {
 }
 
 export default function CourseManager({
+  adminToken,
   dawrat,
   exams,
   selectedDawraId,
@@ -76,11 +85,28 @@ export default function CourseManager({
   selectDawra,
   setActiveTab,
   setSelectedExamId,
+  onManageCourseCertificates,
   loading,
   setLoading,
   setNotice,
   setError,
 }: CourseManagerProps) {
+  const [programs, setPrograms] = useState<IjazahProgram[]>([]);
+
+  useEffect(() => {
+    if (!adminToken) return;
+    let mounted = true;
+    ghawthaniAdmin<{ programs: IjazahProgram[] }>(adminToken, 'list_programs')
+      .then((res) => {
+        if (mounted) setPrograms(res.programs || []);
+      })
+      .catch(() => {
+        // Ignore silent background load error on courses view
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [adminToken]);
   const [courseForm, setCourseForm] = useState({
     id: '',
     title: '',
@@ -585,6 +611,12 @@ export default function CourseManager({
           {dawrat.map((dawra) => {
             const dawraExams = exams.filter((exam) => exam.dawra_id === dawra.id);
             const status = normalizeCourseStatus(dawra.status);
+            const linkedProgram = programs.find(
+              (program) =>
+                program.dawra_id === dawra.id
+                || (!program.dawra_id && program.slug === 'ghawthani' && dawra.title.includes('الغوثاني')),
+            );
+            const programAvailability = linkedProgram ? computeProgramAvailability(linkedProgram) : null;
             return (
               <article className={`course-group ${selectedDawraId === dawra.id ? 'is-selected' : ''}`} key={dawra.id}>
                 <div className="course-group-header">
@@ -656,6 +688,120 @@ export default function CourseManager({
                   {dawraExams.length === 0 && (
                     <span className="course-empty">لا يوجد اختبار لهذه الدورة بعد.</span>
                   )}
+                </div>
+
+                <div className="course-certificates-strip">
+                  <div className="course-certificates-info">
+                    <div className="course-certificates-title">
+                      <Award size={16} aria-hidden />
+                      <strong>الإجازات والشهادات</strong>
+                      {linkedProgram && programAvailability ? (
+                        <span className={`gh-status ${programAvailability.state === 'available' ? 'completed' : programAvailability.state === 'scheduled' ? 'pending' : 'not_required'}`}>
+                          {programAvailability.state === 'available'
+                            ? 'الإتاحة مفتوحة'
+                            : programAvailability.state === 'scheduled'
+                              ? 'مجدول'
+                              : programAvailability.state === 'expired'
+                                ? 'انتهت فترة الإتاحة'
+                                : 'متوقف'}
+                        </span>
+                      ) : (
+                        <span className="gh-status not_required">غير مُعدّ بعد</span>
+                      )}
+                    </div>
+                    {linkedProgram ? (
+                      <small>
+                        المستندات المفعّلة:{' '}
+                        {[linkedProgram.offers_certificate && 'شهادة', linkedProgram.offers_ijazah && 'إجازة']
+                          .filter(Boolean)
+                          .join(' و ')}{' '}
+                        • الأهلية:{' '}
+                        {linkedProgram.eligibility_method === 'legacy_attendance'
+                          ? 'إقرار حضور الغوثاني'
+                          : linkedProgram.eligibility_method === 'passed_exam'
+                            ? 'النجاح في الاختبار'
+                            : 'إضافة يدوية'}
+                        {linkedProgram.requires_approval ? ' • يتطلب موافقة الإدارة' : ''}
+                      </small>
+                    ) : (
+                      <small>فعّل الشهادات أو الإجازات وحدد طريقة الاستحقاق وفترة الإتاحة لهذه الدورة.</small>
+                    )}
+                  </div>
+                  <div className="item-actions">
+                    {linkedProgram ? (
+                      <>
+                        <button
+                          className="secondary-action small"
+                          type="button"
+                          onClick={() =>
+                            onManageCourseCertificates
+                              ? onManageCourseCertificates(dawra.id, 'eligibility')
+                              : setActiveTab('ghawthani')
+                          }
+                        >
+                          المستحقون والإتاحة
+                        </button>
+                        <button
+                          className="ghost-action small"
+                          type="button"
+                          onClick={() =>
+                            onManageCourseCertificates
+                              ? onManageCourseCertificates(dawra.id, 'submissions')
+                              : setActiveTab('ghawthani')
+                          }
+                        >
+                          الطلبات والإصدارات
+                        </button>
+                        <button
+                          className="ghost-action small"
+                          type="button"
+                          onClick={() =>
+                            onManageCourseCertificates
+                              ? onManageCourseCertificates(dawra.id, 'issued')
+                              : setActiveTab('ghawthani')
+                          }
+                        >
+                          المستندات الصادرة
+                        </button>
+                        <button
+                          className="ghost-action small"
+                          type="button"
+                          onClick={() =>
+                            onManageCourseCertificates
+                              ? onManageCourseCertificates(dawra.id, 'templates')
+                              : setActiveTab('ghawthani')
+                          }
+                        >
+                          القوالب
+                        </button>
+                        <button
+                          className="ghost-action small"
+                          type="button"
+                          onClick={() =>
+                            onManageCourseCertificates
+                              ? onManageCourseCertificates(dawra.id, 'programs')
+                              : setActiveTab('ghawthani')
+                          }
+                        >
+                          <Settings2 size={14} aria-hidden />
+                          الإعدادات
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="secondary-action small"
+                        type="button"
+                        onClick={() =>
+                          onManageCourseCertificates
+                            ? onManageCourseCertificates(dawra.id, 'programs')
+                            : setActiveTab('ghawthani')
+                        }
+                      >
+                        <Award size={15} aria-hidden />
+                        إعداد الإجازات والشهادات
+                      </button>
+                    )}
+                  </div>
                 </div>
               </article>
             );

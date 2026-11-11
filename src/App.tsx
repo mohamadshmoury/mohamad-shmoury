@@ -2,13 +2,21 @@ import { AlertTriangle, Award, BookOpen, GraduationCap, LayoutDashboard, Loader2
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AdminPanel from './components/AdminPanel';
 import AssessmentFlow from './components/AssessmentFlow';
+import CertificatesHub from './components/CertificatesHub';
 import GhawthaniIjazahPage from './components/GhawthaniIjazahPage';
 import PublicSite from './components/PublicSite';
 import { getPublishedExamWithQuestions } from './lib/examService';
 import { getExamReferenceFromUrl, getExamShareUrl } from './lib/examLinks';
+import {
+  addParticipantClaim,
+  getParticipantPortfolio,
+  IJAZAH_CLAIMS_CHANGED,
+  loadParticipantClaims,
+  removeParticipantClaims,
+} from './lib/ghawthaniService';
 import type { Exam } from './types';
 
-type View = 'home' | 'assessment' | 'admin' | 'ghawthani';
+type View = 'home' | 'assessment' | 'admin' | 'ghawthani' | 'certificates';
 type DirectExamState = 'idle' | 'loading' | 'error';
 
 export default function App() {
@@ -16,14 +24,43 @@ export default function App() {
   const [activeExam, setActiveExam] = useState<Exam | null>(null);
   const [directExamState, setDirectExamState] = useState<DirectExamState>('idle');
   const [ijazahProgramSlug, setIjazahProgramSlug] = useState('ghawthani');
+  const [showCertificatesTab, setShowCertificatesTab] = useState(false);
   const routeRequestRef = useRef(0);
 
   const openExamFromUrl = useCallback(async () => {
     const requestId = ++routeRequestRef.current;
     const normalizedPath = window.location.pathname.replace(/\/+$/, '');
+    if (normalizedPath.toLowerCase() === '/certificates') {
+      const params = new URLSearchParams(window.location.search);
+      const claim = params.get('claim');
+      const submission = params.get('submission');
+      const token = params.get('token');
+      const program = params.get('program') || undefined;
+      if (claim && token) {
+        sessionStorage.setItem('shmoury_ijazah_url_claim_attempt', `entitlement:${claim}`);
+        addParticipantClaim({ kind: 'entitlement', id: claim, token, program_slug: program });
+        window.history.replaceState({}, '', '/certificates');
+      } else if (submission && token) {
+        sessionStorage.setItem('shmoury_ijazah_url_claim_attempt', `submission:${submission}`);
+        addParticipantClaim({ kind: 'submission', id: submission, token, program_slug: program || 'ghawthani' });
+        window.history.replaceState({}, '', '/certificates');
+      }
+      setActiveExam(null);
+      setDirectExamState('idle');
+      setView('certificates');
+      return;
+    }
     const programMatch = normalizedPath.match(/^\/ejaza\/([a-z0-9-]+)$/i);
     if (normalizedPath.toLowerCase() === '/ejazaghawthani' || programMatch) {
-      setIjazahProgramSlug(programMatch?.[1].toLowerCase() || 'ghawthani');
+      const slug = programMatch?.[1].toLowerCase() || 'ghawthani';
+      const params = new URLSearchParams(window.location.search);
+      const submission = params.get('submission');
+      const token = params.get('token');
+      if (submission && token) {
+        addParticipantClaim({ kind: 'submission', id: submission, token, program_slug: slug });
+        window.history.replaceState({}, '', normalizedPath);
+      }
+      setIjazahProgramSlug(slug);
       setActiveExam(null);
       setDirectExamState('idle');
       setView('ghawthani');
@@ -57,6 +94,30 @@ export default function App() {
     return () => window.removeEventListener('popstate', openExamFromUrl);
   }, [openExamFromUrl]);
 
+  const refreshCertificatesVisibility = useCallback(async () => {
+    const claims = loadParticipantClaims();
+    try {
+      const result = await getParticipantPortfolio(claims);
+      setShowCertificatesTab(result.has_visible_items);
+      const isCertificatesRoute = window.location.pathname.replace(/\/+$/, '').toLowerCase() === '/certificates';
+      if (result.invalid_claims.length && !isCertificatesRoute) {
+        removeParticipantClaims(result.invalid_claims);
+      }
+    } catch {
+      // Keep navigation stable during a transient network failure.
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCertificatesVisibility();
+    window.addEventListener(IJAZAH_CLAIMS_CHANGED, refreshCertificatesVisibility);
+    window.addEventListener('storage', refreshCertificatesVisibility);
+    return () => {
+      window.removeEventListener(IJAZAH_CLAIMS_CHANGED, refreshCertificatesVisibility);
+      window.removeEventListener('storage', refreshCertificatesVisibility);
+    };
+  }, [refreshCertificatesVisibility]);
+
   function startExam(exam: Exam) {
     routeRequestRef.current += 1;
     window.history.pushState({ examId: exam.id }, '', getExamShareUrl(exam));
@@ -72,6 +133,7 @@ export default function App() {
     setActiveExam(null);
     setDirectExamState('idle');
     setView('home');
+    void refreshCertificatesVisibility();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -84,13 +146,22 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  function openGhawthani() {
+  function openLegacyProgram(slug: string) {
     routeRequestRef.current += 1;
-    window.history.pushState({}, '', '/ejazaGhawthani');
-    setIjazahProgramSlug('ghawthani');
+    window.history.pushState({}, '', slug === 'ghawthani' ? '/ejazaGhawthani' : `/ejaza/${slug}`);
+    setIjazahProgramSlug(slug);
     setActiveExam(null);
     setDirectExamState('idle');
     setView('ghawthani');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function openCertificates() {
+    routeRequestRef.current += 1;
+    window.history.pushState({}, '', '/certificates');
+    setActiveExam(null);
+    setDirectExamState('idle');
+    setView('certificates');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -118,16 +189,16 @@ export default function App() {
             <GraduationCap size={17} aria-hidden />
             <span>الدورات</span>
           </button>
-          <button
-            className={`nav-btn ${view === 'ghawthani' ? 'active' : ''}`}
-            onClick={openGhawthani}
+          {showCertificatesTab && <button
+            className={`nav-btn ${view === 'certificates' ? 'active' : ''}`}
+            onClick={openCertificates}
             type="button"
-            aria-label="إجازة وشهادة الغوثاني"
-            aria-current={view === 'ghawthani' ? 'page' : undefined}
+            aria-label="الإجازات والشهادات"
+            aria-current={view === 'certificates' ? 'page' : undefined}
           >
             <Award size={17} aria-hidden />
-            <span>الإجازة والشهادة</span>
-          </button>
+            <span>الإجازات والشهادات</span>
+          </button>}
           <button
             className={`nav-btn ${view === 'admin' ? 'active' : ''}`}
             onClick={openAdmin}
@@ -142,9 +213,20 @@ export default function App() {
       </header>
 
       {view === 'home' && <PublicSite onStartExam={startExam} />}
-      {view === 'ghawthani' && <GhawthaniIjazahPage onBack={goHome} programSlug={ijazahProgramSlug} />}
+      {view === 'ghawthani' && (
+        <GhawthaniIjazahPage
+          onBack={goHome}
+          onOpenCertificates={openCertificates}
+          programSlug={ijazahProgramSlug}
+        />
+      )}
+      {view === 'certificates' && <CertificatesHub onBack={goHome} onOpenLegacy={openLegacyProgram} />}
       {view === 'assessment' && activeExam && (
-        <AssessmentFlow examSummary={activeExam} onBack={goHome} />
+        <AssessmentFlow
+          examSummary={activeExam}
+          onBack={goHome}
+          onOpenCertificates={openCertificates}
+        />
       )}
       {view === 'assessment' && !activeExam && directExamState === 'loading' && (
         <main className="direct-exam-state" role="status">

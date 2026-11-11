@@ -2,6 +2,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.50.0';
 import { personalizePdf, readBundledArabicFont, type NamePlacement } from './pdf.ts';
 import { sha256Hex } from './crypto.ts';
 import { expectedDocumentTypes, type DocumentType } from './eligibility.ts';
+import { assertProgramAvailable } from './programs.ts';
 const BUCKET = 'ijazah-private';
 
 function placementFromTemplate(template: Record<string, unknown>): NamePlacement {
@@ -22,7 +23,23 @@ function placementFromTemplate(template: Record<string, unknown>): NamePlacement
 }
 
 export async function issueSubmissionDocuments(client: SupabaseClient, submission: Record<string, any>) {
-  const requiredTypes = expectedDocumentTypes(submission as any);
+  if (submission.revoked_at) {
+    throw new Error('تم إلغاء صلاحية هذا الطلب ولا يمكن إصدار مستندات له.');
+  }
+  if (submission.approval_status === 'rejected') {
+    throw new Error('تم رفض هذا الطلب ولا يمكن إصدار مستندات له.');
+  }
+  if (submission.approval_status === 'pending_approval') {
+    return [];
+  }
+
+  const { data: program, error: programError } = await client
+    .from('ijazah_programs')
+    .select('id, is_active, offers_certificate, offers_ijazah, available_from, available_until')
+    .eq('id', submission.program_id)
+    .single();
+  if (programError) throw programError;
+  const requiredTypes = expectedDocumentTypes(submission as any, program);
   if (requiredTypes.length === 0) {
     const { error } = await client.from('ghawthani_submissions').update({
       generation_status: 'not_required',
@@ -50,6 +67,9 @@ export async function issueSubmissionDocuments(client: SupabaseClient, submissio
     const pendingTypes = requiredTypes.filter((type) => !completedTypes.has(type));
 
     if (pendingTypes.length > 0) {
+      // Availability closes new issuance and retries, but never removes or
+      // invalidates files that were already issued successfully.
+      assertProgramAvailable(program);
       const { data: templates, error: templateError } = await client
         .from('ghawthani_template_versions')
         .select('*')

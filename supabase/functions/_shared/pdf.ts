@@ -1,4 +1,4 @@
-import { PDFDocument, PDFFont, rgb } from 'npm:pdf-lib@1.17.1';
+import { PDFDocument, PDFPage, rgb } from 'npm:pdf-lib@1.17.1';
 import fontkit from 'npm:@pdf-lib/fontkit@1.1.1';
 
 export const ARABIC_FONT_FAMILIES = ['noto_naskh', 'amiri', 'aref_ruqaa'] as const;
@@ -17,6 +17,29 @@ export interface NamePlacement {
   font_color: string;
   font_family: ArabicFontFamily;
   alignment: 'center' | 'right' | 'left';
+}
+
+interface FontkitGlyphPath {
+  scale(x: number, y: number): FontkitGlyphPath;
+  toSVG(): string;
+}
+
+interface FontkitGlyph {
+  path: FontkitGlyphPath;
+}
+
+interface FontkitGlyphPosition {
+  xAdvance: number;
+  xOffset: number;
+  yOffset: number;
+}
+
+interface ArabicOutlineFont {
+  unitsPerEm: number;
+  layout(text: string): {
+    glyphs: FontkitGlyph[];
+    positions: FontkitGlyphPosition[];
+  };
 }
 
 export function cleanParticipantName(value: unknown) {
@@ -54,20 +77,54 @@ function splitForTwoLines(name: string) {
   return best;
 }
 
-function findLayout(name: string, font: PDFFont, config: NamePlacement) {
+function lineWidthAtSize(font: ArabicOutlineFont, line: string, size: number) {
+  const run = font.layout(line);
+  const widthInFontUnits = run.positions.reduce((total, position) => total + position.xAdvance, 0);
+  return widthInFontUnits * size / font.unitsPerEm;
+}
+
+function findLayout(name: string, font: ArabicOutlineFont, config: NamePlacement) {
   const candidates = [[name], splitForTwoLines(name)];
   for (let size = config.font_size; size >= config.min_font_size; size -= 0.5) {
     for (const logicalLines of candidates) {
       const lineHeight = size * 1.15;
-      // pdf-lib delegates custom-font layout to fontkit, which performs Arabic
-      // contextual shaping. Supplying presentation-form/reversed text here
-      // would shape and reorder it a second time.
-      const fitsWidth = logicalLines.every((line) => font.widthOfTextAtSize(line, size) <= config.name_width);
+      const fitsWidth = logicalLines.every((line) => lineWidthAtSize(font, line, size) <= config.name_width);
       const fitsHeight = logicalLines.length * lineHeight <= config.name_height;
       if (fitsWidth && fitsHeight) return { lines: logicalLines, size, lineHeight };
     }
   }
   throw new Error('الاسم طويل جدًا بالنسبة إلى مساحة القالب الحالية. يرجى ضبط موضع الاسم أو تقصيره دون الإخلال بصحته.');
+}
+
+function drawOutlinedLine(
+  page: PDFPage,
+  font: ArabicOutlineFont,
+  line: string,
+  x: number,
+  baseline: number,
+  size: number,
+  color: ReturnType<typeof colorFromHex>,
+) {
+  const run = font.layout(line);
+  const scale = size / font.unitsPerEm;
+  let cursorX = x;
+
+  run.glyphs.forEach((glyph, index) => {
+    const position = run.positions[index];
+    const path = glyph.path.scale(1, -1).toSVG();
+    if (path) {
+      // pdf-lib flips SVG paths vertically. Pre-flipping the font outline keeps
+      // the font's native baseline direction while retaining fontkit's Arabic
+      // contextual shaping and right-to-left visual glyph order.
+      page.drawSvgPath(path, {
+        x: cursorX + position.xOffset * scale,
+        y: baseline + position.yOffset * scale,
+        scale,
+        color,
+      });
+    }
+    cursorX += position.xAdvance * scale;
+  });
 }
 
 export async function personalizePdf(
@@ -78,7 +135,6 @@ export async function personalizePdf(
 ) {
   const name = cleanParticipantName(participantName);
   const document = await PDFDocument.load(templateBytes, { updateMetadata: false });
-  document.registerFontkit(fontkit);
   const pages = document.getPages();
   const page = pages[config.page_index];
   if (!page) throw new Error('صفحة وضع الاسم غير موجودة في القالب.');
@@ -92,25 +148,32 @@ export async function personalizePdf(
     config.name_y + config.name_height > height + 0.5
   ) throw new Error('منطقة الاسم تقع خارج حدود الصفحة.');
 
-  const font = await document.embedFont(fontBytes, { subset: true });
+  // pdf-lib/fontkit's embedded CID-font path is unreliable for these Arabic
+  // fonts (subset output can be invisible in Chromium, while full embedding
+  // loses joining). Drawing the fontkit-shaped glyph outlines is viewer-safe
+  // and preserves the selected calligraphic font exactly.
+  const font = fontkit.create(fontBytes) as ArabicOutlineFont;
   const layout = findLayout(name, font, config);
   const totalHeight = layout.lines.length * layout.lineHeight;
   const firstBaseline = config.name_y + (config.name_height + totalHeight) / 2 - layout.lineHeight * 0.82;
+  const color = colorFromHex(config.font_color);
 
   layout.lines.forEach((line, index) => {
-    const lineWidth = font.widthOfTextAtSize(line, layout.size);
+    const lineWidth = lineWidthAtSize(font, line, layout.size);
     const x = config.alignment === 'left'
       ? config.name_x
       : config.alignment === 'right'
         ? config.name_x + config.name_width - lineWidth
         : config.name_x + (config.name_width - lineWidth) / 2;
-    page.drawText(line, {
-      x,
-      y: firstBaseline - index * layout.lineHeight,
-      size: layout.size,
+    drawOutlinedLine(
+      page,
       font,
-      color: colorFromHex(config.font_color),
-    });
+      line,
+      x,
+      firstBaseline - index * layout.lineHeight,
+      layout.size,
+      color,
+    );
   });
 
   return new Uint8Array(await document.save({ useObjectStreams: false, addDefaultPage: false }));
