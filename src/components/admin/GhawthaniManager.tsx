@@ -477,6 +477,10 @@ export default function GhawthaniManager({
 
   const pages = Math.max(1, Math.ceil(count / pageSize));
   const activeTemplates = useMemo(() => templates.filter((template) => template.is_active), [templates]);
+  const readyTemplates = useMemo(
+    () => templates.filter((template) => template.is_active && template.is_validated),
+    [templates],
+  );
 
   const issuedDocumentRows = useMemo(() => {
     const items: Array<{ submission: GhawthaniSubmission; document: GhawthaniDocument }> = [];
@@ -692,12 +696,18 @@ export default function GhawthaniManager({
     setLoading(true);
     setError('');
     try {
-      const result = await ghawthaniAdmin<{ sample_url: string }>(adminToken, 'generate_sample', {
+      const result = await ghawthaniAdmin<{ sample_url: string; template: GhawthaniTemplate }>(adminToken, 'generate_sample', {
         template_id: selectedTemplate.id,
         sample_name: sampleName,
       });
       setSampleUrl(result.sample_url);
-      setNotice('تم إنشاء العينة. افحصها بصريًا ثم اعتمد النتيجة إذا كانت صحيحة.');
+      setSelectedTemplate(result.template);
+      setNotice(
+        selectedTemplate.is_active
+          ? 'تم إنشاء العينة وإيقاف تفعيل النسخة مؤقتًا. افحص العينة ثم اعتمدها وأعد التفعيل.'
+          : 'تم إنشاء العينة. افحصها بصريًا ثم اعتمد النتيجة إذا كانت صحيحة.',
+      );
+      await loadTemplates();
     } catch (caught) {
       reportAdminError(caught, 'تعذر إنشاء العينة.');
     } finally {
@@ -1737,7 +1747,10 @@ export default function GhawthaniManager({
           </div>
           <div className="gh-template-status">
             {(Object.keys(templateLabels) as GhawthaniDocumentType[]).map((type) => {
-              const active = activeTemplates.find((template) => template.template_type === type);
+              const active = readyTemplates.find((template) => template.template_type === type);
+              const inconsistent = activeTemplates.find(
+                (template) => template.template_type === type && !template.is_validated,
+              );
               const requiredForProgram = isTemplateRequiredForProgram(selectedProgram, type);
               return (
                 <div
@@ -1750,7 +1763,9 @@ export default function GhawthaniManager({
                     <small>
                       {active
                         ? `النسخة ${active.version_number} مفعّلة`
-                        : requiredForProgram
+                        : inconsistent
+                          ? `النسخة ${inconsistent.version_number} مفعّلة لكنها غير معتمدة`
+                          : requiredForProgram
                           ? 'لا توجد نسخة مفعّلة'
                           : 'غير مطلوب في إعداد هذه الدورة'}
                     </small>
@@ -1820,8 +1835,10 @@ export default function GhawthaniManager({
                         {templateLabels[template.template_type]} - النسخة {template.version_number}
                       </strong>
                       <small>
-                        {template.is_active
+                        {template.is_active && template.is_validated
                           ? 'مفعّلة'
+                          : template.is_active
+                            ? 'مفعّلة لكنها غير معتمدة'
                           : template.is_validated
                             ? 'مفحوصة وغير مفعّلة'
                             : 'بانتظار الفحص'}{' '}

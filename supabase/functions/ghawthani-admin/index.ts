@@ -671,19 +671,26 @@ Deno.serve(async (request) => {
       const samplePath = `samples/${template.id}/${crypto.randomUUID()}.pdf`;
       const { error: uploadError } = await client.storage.from(BUCKET).upload(samplePath, output, { contentType: 'application/pdf', cacheControl: '0', upsert: false });
       if (uploadError) throw uploadError;
-      const { error: sampleRecordError } = await client.from('ghawthani_template_versions').update({
+      const { data: updatedTemplate, error: sampleRecordError } = await client.from('ghawthani_template_versions').update({
         sample_storage_path: samplePath,
         sample_generated_at: new Date().toISOString(),
         is_validated: false,
         validated_at: null,
-      }).eq('id', template.id);
+        is_active: false,
+        activated_at: null,
+      }).eq('id', template.id).select('*').single();
       if (sampleRecordError) throw sampleRecordError;
       if (template.sample_storage_path && template.sample_storage_path !== samplePath) {
         await client.storage.from(BUCKET).remove([template.sample_storage_path]);
       }
       const { data: signed, error: signedError } = await client.storage.from(BUCKET).createSignedUrl(samplePath, 600);
       if (signedError) throw signedError;
-      return jsonResponse({ sample_url: signed.signedUrl, expires_in: 600, sample_name: sampleName });
+      return jsonResponse({
+        sample_url: signed.signedUrl,
+        expires_in: 600,
+        sample_name: sampleName,
+        template: await signedTemplate(client, updatedTemplate),
+      });
     }
 
     if (action === 'validate_template') {
