@@ -10,9 +10,11 @@ import {
   FileText,
   Loader2,
   RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  clearLegacyProgramSession,
   documentLabels,
   getParticipantPortfolio,
   IJAZAH_CLAIMS_CHANGED,
@@ -214,6 +216,11 @@ export default function CertificatesHub({ onBack, onOpenLegacy }: Props) {
     }
   }
 
+  function startAnotherParticipant(programSlug: string) {
+    clearLegacyProgramSession(programSlug);
+    onOpenLegacy(programSlug);
+  }
+
   return (
     <main className="certificates-page" dir="rtl">
       <section className="certificates-hero">
@@ -317,7 +324,7 @@ export default function CertificatesHub({ onBack, onOpenLegacy }: Props) {
                         {nextAction && <p className="request-next-action">{nextAction}</p>}
 
                         {!entry.revoked && entry.availability.available && entry.claim_kind === 'open_program' && (
-                          <button className="primary-action" type="button" onClick={() => onOpenLegacy(program.slug)}>
+                          <button className="primary-action" type="button" onClick={() => startAnotherParticipant(program.slug)}>
                             بدء استمارة الحضور والطلب
                           </button>
                         )}
@@ -372,6 +379,19 @@ export default function CertificatesHub({ onBack, onOpenLegacy }: Props) {
                       </article>
                     );
                   })}
+                  {program.eligibility_method === 'legacy_attendance'
+                    && courseEntries[0].availability.available
+                    && !courseEntries.some((entry) => entry.claim_kind === 'open_program') && (
+                    <div className="certificate-new-participant">
+                      <div>
+                        <strong>طلب لشخص آخر</strong>
+                        <p>ابدأ استمارة جديدة على هذا المتصفح مع الإبقاء على المستندات الصادرة سابقًا.</p>
+                      </div>
+                      <button className="primary-action" type="button" onClick={() => startAnotherParticipant(program.slug)}>
+                        <RotateCcw size={17} aria-hidden /> تقديم طلب لشخص آخر
+                      </button>
+                    </div>
+                  )}
                 </section>
 
                 <section>

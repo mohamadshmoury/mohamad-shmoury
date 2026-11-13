@@ -75,6 +75,9 @@
 .certificate-request + .certificate-request { margin-top: 12px; }
 .certificate-request > div:first-child { display: flex; justify-content: space-between; gap: 12px; }
 .certificate-request small { color: var(--text-muted, #60706c); }
+.certificate-new-participant { display: grid; gap: 12px; margin-top: 16px; padding: 16px; border: 1px dashed #a8cbc3; border-radius: 16px; background: #f5fbf9; }
+.certificate-new-participant p { margin: 4px 0 0; color: var(--text-muted, #60706c); font-size: .9rem; line-height: 1.65; }
+.certificate-new-participant .primary-action { justify-self: start; }
 .request-error, .request-note { margin: 0; color: #9f2e3a; line-height: 1.65; }
 .request-note { color: var(--text-muted, #60706c); }
 .certificate-claim-form { display: grid; grid-template-columns: 1fr auto; gap: 14px; padding-top: 14px; border-top: 1px solid var(--border, #dce8e5); }

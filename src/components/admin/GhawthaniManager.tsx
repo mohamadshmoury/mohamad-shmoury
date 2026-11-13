@@ -374,7 +374,9 @@ export default function GhawthaniManager({
       setRows(result.rows);
       setCount(result.count);
       setSummary(result.summary);
-      if (selected) setSelected(result.rows.find((row) => row.id === selected.id) || selected);
+      setSelected((current) => (
+        current ? result.rows.find((row) => row.id === current.id) || null : null
+      ));
     } catch (caught) {
       reportAdminError(caught, 'تعذر تحميل الطلبات والإصدارات.');
     } finally {
@@ -391,7 +393,6 @@ export default function GhawthaniManager({
     filters.revoked,
     page,
     section,
-    selected,
     selectedProgramId,
     setError,
   ]);
@@ -802,10 +803,17 @@ export default function GhawthaniManager({
     setLoading(true);
     setError('');
     try {
-      await ghawthaniAdmin(adminToken, 'delete_submission', { submission_id: selected.id });
+      const deletedId = selected.id;
+      await ghawthaniAdmin(adminToken, 'delete_submission', { submission_id: deletedId });
+      setRows((current) => current.filter((row) => row.id !== deletedId));
+      setCount((current) => Math.max(0, current - 1));
       setSelected(null);
       setNotice('تم حذف الطلب ومستنداته.');
-      await loadRows();
+      if (page > 1 && rows.length === 1) {
+        setPage((current) => Math.max(1, current - 1));
+      } else {
+        await loadRows();
+      }
     } catch (caught) {
       reportAdminError(caught, 'تعذر حذف الطلب.');
     } finally {
