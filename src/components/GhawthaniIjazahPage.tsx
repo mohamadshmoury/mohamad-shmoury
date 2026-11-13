@@ -483,7 +483,7 @@ export default function GhawthaniIjazahPage({ onBack, onOpenCertificates, progra
                 )}
                 {availability.available && (
                   <button className="ghost-action" type="button" onClick={reset}>
-                    <RotateCcw size={17} aria-hidden /> تقديم طلب جديد
+                    <RotateCcw size={17} aria-hidden /> تقديم طلب لشخص آخر
                   </button>
                 )}
               </div>

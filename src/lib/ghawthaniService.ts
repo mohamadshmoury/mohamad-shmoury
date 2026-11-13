@@ -305,12 +305,9 @@ export function loadLegacyProgramSession(programSlug: string): { submissionId: s
         return { ...parsed, savedProgramSlug: savedSlug };
       }
     }
-    const claim = loadParticipantClaims().find(
-      (item) => item.kind === 'submission' && (item.program_slug || 'ghawthani') === programSlug,
-    );
-    if (claim) {
-      return { submissionId: claim.id, accessToken: claim.token, savedProgramSlug: programSlug };
-    }
+    // Persistent claims belong to the certificates portfolio, not to the
+    // currently active form. Reusing one here would bring the previous
+    // participant back after handing a shared browser to the next person.
   } catch {
     // Ignore storage parsing errors.
   }
